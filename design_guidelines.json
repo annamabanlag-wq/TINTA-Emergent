@@ -1,0 +1,168 @@
+{
+  "app_name": "Inked - Tattoo Booking",
+  "personality": "5 Brutalist Mobile (DARK)",
+  "personality_one_liner": "Raw, edgy, ink-inspired marketplace using high-contrast dark Brutalism to make artists and their portfolios the undisputed focal points.",
+  "color": {
+    "surface": "#0A0A0A",
+    "onSurface": "#FFFFFF",
+    "surfaceSecondary": "#171717",
+    "onSurfaceSecondary": "#F5F5F5",
+    "surfaceTertiary": "#262626",
+    "onSurfaceTertiary": "#E0E0E0",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#0A0A0A",
+    "brand": "#E51C24",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#E51C24",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#B31219",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#330C0E",
+    "onBrandTertiary": "#FF4D55",
+    "success": "#008A2E",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D99000",
+    "onWarning": "#000000",
+    "error": "#E51C24",
+    "onError": "#FFFFFF",
+    "info": "#404040",
+    "onInfo": "#FFFFFF",
+    "border": "#333333",
+    "borderStrong": "#FFFFFF",
+    "divider": "#262626",
+    "muted": "#808080"
+  },
+  "typography": {
+    "displayFontFamily": "Bebas Neue",
+    "textFontFamily": "DM Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 32,
+      "4xl": 48
+    }
+  },
+  "spacing": {
+    "rule": "Use rigid grids, edge-to-edge sections, sharp containers, and thick dividers instead of soft cards. Maintain intentional whitespace imbalance.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 0,
+    "md": 0,
+    "lg": 0,
+    "pill": 0
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": ["Avoid completely. Brutalism relies on solid colors, sharp borders, and high contrast."],
+    "dont's": ["No blur, no frosted glass, no soft overlays."]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-blur",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Discover (Home)",
+      "purpose": "Feed of artists with search and pill-shaped style filters.",
+      "states": {
+        "loading": "High-contrast skeleton grid with sharp borders.",
+        "empty": "Oversized 'NO ARTISTS FOUND' text with a reset filter button.",
+        "error": "Signal red error block with raw typography 'CONNECTION FAILED' and a hard-edged retry button."
+      },
+      "layout": "Sticky horizontal tab menu for filters (tags/pills) at the top. Below, a Pinterest-style masonry grid (or single column full-bleed images) of tattoos and artists. Images should touch edges or have thick 2pt borders. Remove heavy shadows."
+    },
+    {
+      "name": "Artist Profile",
+      "purpose": "Showcase the artist's portfolio grid, bio, rates, and reviews.",
+      "states": {
+        "loading": "Blinking mono-font counter or sharp skeletons.",
+        "empty": "N/A - Artists must have portfolios.",
+        "error": "Text-heavy error banner at top."
+      },
+      "layout": "Oversized display font (Bebas Neue) for artist name overlapping a full-bleed dark hero image. A strict, border-separated grid for portfolio items. Sticky 'BOOK SESSION' CTA fixed at bottom in brandPrimary (Signal Red)."
+    },
+    {
+      "name": "Booking Flow",
+      "purpose": "Select date/time, add tattoo description, upload reference, and pay deposit.",
+      "states": {
+        "loading": "Solid screen blocking with 'PROCESSING' mono text.",
+        "empty": "N/A",
+        "error": "Inline red validation text under form fields."
+      },
+      "layout": "Mechanical, utility-focused single-column form. Labels in uppercase mono/display font above inputs. Inputs have sharp 2pt borders. Progress indicated by exposed system state (e.g., 'STEP 1 OF 3'). Bottom-sticky submit button."
+    },
+    {
+      "name": "Messages",
+      "purpose": "Chat thread list with artists.",
+      "states": {
+        "loading": "Staggered sharp rectangles.",
+        "empty": "Stark screen with 'NO MESSAGES' heading and a button to explore artists.",
+        "error": "Simple text block 'UNABLE TO LOAD MESSAGES'."
+      },
+      "layout": "Edge-to-edge list rows separated by 1pt/2pt solid dividers. No rounded avatars; use square profile images with high contrast."
+    },
+    {
+      "name": "Bookings",
+      "purpose": "List of upcoming and past tattoo sessions.",
+      "states": {
+        "loading": "Solid line skeletons.",
+        "empty": "Large raw text 'NO UPCOMING SESSIONS' with a primary CTA.",
+        "error": "Error text with retry."
+      },
+      "layout": "Stacked modules with exposed metrics (Date, Time, Artist). Use borders and spacing to group data instead of floating cards. Strong numeric hierarchy for dates."
+    }
+  ],
+  "images": {
+    "hero_artist_working": {
+      "url": "https://images.unsplash.com/photo-1568515045052-f9a854d70bfd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHx0YXR0b28lMjBhcnRpc3QlMjB3b3JraW5nfGVufDB8fHx8MTc4ODUwNjQ4OHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Tattoo artist actively working on a client's arm in a studio"
+    },
+    "portfolio_eye_tattoo": {
+      "url": "https://images.unsplash.com/photo-1775135436883-56af5c10a476?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwxfHx0YXR0b28lMjBwb3J0Zm9saW8lMjBibGFjayUyMGFuZCUyMGdyZXl8ZW58MHx8fHwxNzg4NTA2NDg5fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Highly detailed black and grey eye tattoo on arm"
+    },
+    "portfolio_fineline": {
+      "url": "https://images.unsplash.com/photo-1547754145-ef9ff306e3f3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHw0fHxmaW5lJTIwbGluZSUyMHRhdHRvb3xlbnwwfHx8fDE3ODg1MDY0ODh8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Minimalist fine line script tattoo on bicep"
+    },
+    "artist_avatar_square": {
+      "url": "https://images.unsplash.com/photo-1621787279722-c06fe6c18cf7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwyfHx0YXR0b28lMjBwb3J0Zm9saW8lMjBibGFjayUyMGFuZCUyMGdyZXl8ZW58MHx8fHwxNzg4NTA2NDg5fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Portrait of a heavily tattooed artist in a dark studio setting"
+    },
+    "empty_state_image": {
+      "url": "https://images.unsplash.com/photo-1605647533135-51b5906087d0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwzfHx0YXR0b28lMjBhcnRpc3QlMjB3b3JraW5nfGVufDB8fHx8MTc4ODUwNjQ4OHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Moody black and white portrait of a man with arm tattoos"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the Brutalist Mobile (DARK) personality. Use a deep obsidian black background (#0A0A0A) with stark white text and a bold Signal Red (#E51C24) accent.",
+    "No rounded corners anywhere (radius is strictly 0). All buttons, images, and containers must be sharp-edged rectangles.",
+    "Do not use glassmorphism, blur, or soft shadows. Separate content using thick borders (1pt-2pt), edge-to-edge layouts, and stark color contrasts.",
+    "Leverage typography as layout. Use oversized 'Bebas Neue' for headers, making them structurally dominant, with 'DM Sans' for readability in body copy.",
+    "Ensure 'BOOK SESSION' and similar primary CTAs are sticky at the bottom of scrollable views, avoiding overlap with safe areas.",
+    "Always apply a vertical gradient scrim (transparent to #0A0A0A) over imagery when overlaying text to maintain WCAG contrast standards.",
+    "Forms should feel mechanical: uppercase labels, thick borders on inputs, and inline solid validation colors.",
+    "For the Discover screen, implement a Pinterest-style layout or full-bleed cards separated by borders. Implement horizontal scrollable tags (pills) for filtering, but keep them sharp-edged."
+  ]
+}
