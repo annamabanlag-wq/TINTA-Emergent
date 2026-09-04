@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 7 validates 3 new features on Inked: (1) Home Service Booking, (2) Rebooking Follow-up card, (3) Filipino Artist Bios (bio_tl). BACKEND: created /app/backend/tests/test_iteration_7_features.py -> 12/12 PASS. Verifies (a) all 6 seeded artists have home_service_available, home_service_fee, bio_tl (non-empty, backfilled) with exact expected values (Kai 4000, Diego 5500, Ash 3500, Nova 4500, Mara 0/false, Yuki 0/false); (b) POST /api/bookings with home_service:true for Kai persists home_service=true, service_fee=4000, service_address, and for Mara silently ignores home_service (home_service=false, service_fee=0, service_address=null); (c) GET /api/bookings/followups returns pre-seeded Diego Ruiz past booking for demo user, is capped at 3, ordered date desc, excludes reviewed artists, excludes cancelled bookings, and returns [] for a fresh user with no bookings; (d) PHP-rate + address/lat/lon regression preserved. Full regression suite (backend_test.py + test_iteration_6_payments.py) 26/26 PASS. FRONTEND (mobile 390x844, demo@inked.dev): (i) Bookings tab shows followup-banner with LEAVE REVIEW + BOOK AGAIN (Diego Ruiz · 2026-09-01) — followup-review-{id} and followup-rebook-{id} testIDs found; tapping followup-rebook navigated to /book/{artistId}. (ii) Kai Nakamura artist detail: HOME SERVICE AVAILABLE badge + ₱4,000 fee visible in EN, switches to 'HOUSE-CALL AVAILABLE' + Tagalog bio ('Labinlimang taong...') in TL locale. Mara Voss: NO home service badge. (iii) Booking Step 2 for Kai has location-studio + location-home testIDs; book-service-address-input is hidden by default, appears only when HOME selected; description passes step2 gate. Step 3 summary shows 'HOME SERVICE FEE +₱4,000', EST. TOTAL ₱29,000 (rate ₱12,500/HR x 2H + fee ₱4,000), DEPOSIT ₱2,900. Payment method pills (card/gcash/maya) rendered per spec. (iv) i18n toggle EN/TL via lang-en / lang-tl testIDs in profile updates the entire tree including artist detail bio + badge label. Stripe key still 'sk_test_emergent' — mock path active. No regressions found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_7_features.py",
+    "/app/test_reports/pytest/iteration_7.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional: consider adding testID to the (tabs) tab-bar buttons (currently only accessible via role/href) — not required by this iteration's spec but would speed up future E2E tests.",
+    "Stripe key remains placeholder 'sk_test_emergent' → mock path stays active until real key is provisioned (unchanged from prior iterations).",
+    "Optional data-hygiene: pytest creates real future/past bookings in Mongo for TEST_ users; over time this bloats the collection. A dev-only cleanup endpoint would help long-term."
+  ],
+  "critical_code_review_comments": [
+    "server.py L284-298: home_service is correctly gated by artist.home_service_available (silent-ignore semantics as per spec). service_fee falls back to 0 if artist doc lacks home_service_fee.",
+    "server.py L317-341: /bookings/followups uses ISO YYYY-MM-DD string comparison against today/two_weeks_ago; this works because both DB and comparison strings are lexicographically sortable ISO dates and status filter excludes cancelled. Cap-3 loop after Mongo sort is correct.",
+    "server.py L971-1005: startup backfill idempotently sets bio_tl + home_service_* on any artist missing those fields via $or exists:false query — safe on repeated boots.",
+    "artist/[id].tsx L187-191: badge conditional uses artist.home_service_available with locale-aware label ('HOME SERVICE AVAILABLE' vs 'HOUSE-CALL AVAILABLE'). Fee formatted via fmtPHP.",
+    "book/[artistId].tsx L86: serviceFee only added when both homeService toggled AND artist.home_service_available truthy — matches backend gating.",
+    "book/[artistId].tsx L332-340: location-home Pressable is disabled + styled disabled when !home_service_available (prevents Mara flow).",
+    "book/[artistId].tsx L353: book-service-address-input only renders when homeService=true (conditional mount, not just style). canStep2 gate requires >5 chars per task description.",
+    "(tabs)/bookings.tsx L87-107: followup-banner rendered above upcoming list, one card per followup with review + rebook Pressable each with testID `followup-review-${booking_id}` / `followup-rebook-${booking_id}`."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_7_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12 new + 26/26 regression)", "frontend": "100% — all iteration-7 features verified on mobile viewport 390x844"},
+  "seed_data_creation": "Fresh user fixture creates 4 past bookings (day-1..day-4) + 1 cancelled past booking + 1 review, all prefixed TEST_iter7_. Demo user gets 3 future test bookings (2027-01-15/16/17) with TEST_home service description; safe far-future dates and won't collide with real usage.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New endpoints/fields: (a) GET /api/artists now includes home_service_available:bool, home_service_fee:int, bio_tl:str for every artist (backfilled at startup). (b) POST /api/bookings accepts optional home_service:bool + service_address:str; server gates on artist.home_service_available. Response contains home_service, service_address, service_fee. (c) GET /api/bookings/followups returns list[{booking_id, artist_id, artist_name, artist_avatar, date}] — past bookings within last 14 days, not cancelled, artist not yet reviewed by user, capped at 3, ordered date desc. Frontend testIDs added: location-studio, location-home, book-service-address-input, followup-banner, followup-review-{id}, followup-rebook-{id}. Demo user has pre-seeded past Diego Ruiz booking (3 days ago) — do NOT delete. Stripe still placeholder. All prior iterations' regressions pass.",
+  "rca_of_issue": "N/A — no bugs found. Every feature listed in the review request works end-to-end (backend + UI). Screenshots captured at /tmp/i7_bookings.png (followup banner + Diego card), /tmp/i7_kai.png (Kai detail EN with badge), /tmp/i7_kai_tl.png (Kai detail TL with HOUSE-CALL badge + Tagalog bio), /tmp/i7_step3.png (Step-3 summary showing HOME SERVICE FEE +₱4,000, EST. TOTAL ₱29,000, DEPOSIT ₱2,900)."
+}

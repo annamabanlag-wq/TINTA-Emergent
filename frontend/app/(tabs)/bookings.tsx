@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { api, Booking } from "../../src/api";
+import { api, Booking, Followup } from "../../src/api";
 import { useSession } from "../../src/session";
 import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
@@ -16,16 +16,22 @@ export default function BookingsTab() {
   const { token } = useSession();
   const { t } = useI18n();
   const [items, setItems] = useState<Booking[]>([]);
+  const [followups, setFollowups] = useState<Followup[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
   const load = useCallback(async () => {
     try {
-      const data = await api<Booking[]>("/bookings", {}, token);
+      const [data, fu] = await Promise.all([
+        api<Booking[]>("/bookings", {}, token),
+        api<Followup[]>("/bookings/followups", {}, token).catch(() => []),
+      ]);
       setItems(data);
+      setFollowups(fu);
     } catch {
       setItems([]);
+      setFollowups([]);
     } finally { setLoading(false); setRefreshing(false); }
   }, [token]);
 
@@ -76,6 +82,41 @@ export default function BookingsTab() {
           keyExtractor={(b) => b.id}
           contentContainerStyle={{ paddingBottom: spacing.xl }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
+          ListHeaderComponent={
+            tab === "upcoming" && followups.length > 0 ? (
+              <View style={styles.followupList} testID="followup-banner">
+                {followups.map((f) => (
+                  <View key={f.booking_id} style={styles.followupCard}>
+                    <View style={styles.followupHead}>
+                      <Image source={f.artist_avatar} style={styles.followupAvatar} contentFit="cover" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.followupTitle}>{t("bookings.followup.title")}</Text>
+                        <Text style={styles.followupSub}>{f.artist_name.toUpperCase()} · {f.date}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.followupActions}>
+                      <Pressable
+                        testID={`followup-review-${f.booking_id}`}
+                        onPress={() => router.push(`/artist/${f.artist_id}`)}
+                        style={styles.followupBtn}
+                      >
+                        <Icon name="star" size={12} color={colors.onBrand} />
+                        <Text style={styles.followupBtnText}>{t("bookings.followup.leaveReview")}</Text>
+                      </Pressable>
+                      <Pressable
+                        testID={`followup-rebook-${f.booking_id}`}
+                        onPress={() => router.push(`/book/${f.artist_id}`)}
+                        style={[styles.followupBtn, styles.followupBtnGhost]}
+                      >
+                        <Icon name="rotate-cw" size={12} color={colors.onSurface} />
+                        <Text style={[styles.followupBtnText, { color: colors.onSurface }]}>{t("bookings.followup.bookAgain")}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null
+          }
           renderItem={({ item }) => {
             const d = new Date(item.date + "T00:00:00");
             const today0 = new Date(); today0.setHours(0,0,0,0);
@@ -214,4 +255,14 @@ const styles = StyleSheet.create({
   cancelText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
   bookAgainBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.brand, borderWidth: 1, borderColor: colors.brand, paddingHorizontal: spacing.md, paddingVertical: 6 },
   bookAgainText: { color: colors.onBrand, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
+  followupList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm },
+  followupCard: { borderWidth: 2, borderColor: colors.brand, backgroundColor: colors.surfaceSecondary, padding: spacing.md, gap: spacing.md },
+  followupHead: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  followupAvatar: { width: 40, height: 40, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.borderStrong },
+  followupTitle: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 2 },
+  followupSub: { color: colors.onSurface, fontSize: 13, fontWeight: "800", letterSpacing: 1, marginTop: 2 },
+  followupActions: { flexDirection: "row", gap: spacing.sm },
+  followupBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.brand, paddingVertical: 10, borderWidth: 2, borderColor: colors.brand },
+  followupBtnGhost: { backgroundColor: colors.surface, borderColor: colors.borderStrong },
+  followupBtnText: { color: colors.onBrand, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
 });

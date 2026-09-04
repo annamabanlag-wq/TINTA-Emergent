@@ -11,6 +11,8 @@ export default function TabsLayout() {
   if (loading) return null;
   if (!user) return <Redirect href="/(auth)/sign-in" />;
 
+  const isAdmin = !!user.is_admin;
+
   return (
     <Tabs
       screenOptions={{
@@ -47,6 +49,14 @@ export default function TabsLayout() {
         options={{
           title: t("tab.messages"),
           tabBarIcon: ({ color, size }) => <Icon name="message-square" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: t("tab.admin"),
+          href: isAdmin ? "/(tabs)/admin" : null,
+          tabBarIcon: ({ color, size }) => <Icon name="shield" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

@@ -9,7 +9,9 @@ import ImageViewer from "../../src/ImageViewer";
 import { api, Artist, Review } from "../../src/api";
 import { useSession } from "../../src/session";
 import { useFavorites } from "../../src/favorites";
+import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
+import { fmtPHP } from "../../src/currency";
 
 export default function ArtistDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -17,6 +19,7 @@ export default function ArtistDetail() {
   const router = useRouter();
   const { token } = useSession();
   const { isFavorite, toggle } = useFavorites();
+  const { locale } = useI18n();
   const [artist, setArtist] = useState<Artist | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +183,15 @@ export default function ArtistDetail() {
         {/* Bio */}
         <View style={styles.block}>
           <Text style={styles.blockTitle}>ABOUT</Text>
-          <Text style={styles.bio}>{artist.bio}</Text>
+          <Text style={styles.bio}>{locale === "tl" && artist.bio_tl ? artist.bio_tl : artist.bio}</Text>
+          {artist.home_service_available ? (
+            <View style={styles.homeBadge}>
+              <Icon name="truck" size={12} color={colors.onBrand} />
+              <Text style={styles.homeBadgeText}>
+                {locale === "tl" ? "HOUSE-CALL AVAILABLE" : "HOME SERVICE AVAILABLE"} · +{fmtPHP(artist.home_service_fee ?? 0)}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Styles */}
@@ -336,6 +347,8 @@ const styles = StyleSheet.create({
   block: { padding: spacing.lg, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
   blockTitle: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 3 },
   bio: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 22 },
+  homeBadge: { flexDirection: "row", alignItems: "center", gap: spacing.sm, alignSelf: "flex-start", backgroundColor: colors.brand, paddingHorizontal: spacing.md, paddingVertical: 6, borderWidth: 2, borderColor: colors.borderStrong, marginTop: spacing.sm },
+  homeBadgeText: { color: colors.onBrand, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
   stylesRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   styleTag: { borderWidth: 2, borderColor: colors.borderStrong, paddingHorizontal: spacing.md, paddingVertical: 6 },
   styleTagText: { color: colors.onSurface, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },

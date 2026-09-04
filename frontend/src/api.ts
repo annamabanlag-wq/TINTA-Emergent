@@ -16,7 +16,7 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
 }
 
 // ------- Types -------
-export type User = { id: string; email: string; name: string };
+export type User = { id: string; email: string; name: string; is_admin?: boolean };
 export type AuthOut = { access_token: string; token_type: string; user: User };
 export type Artist = {
   id: string;
@@ -29,6 +29,9 @@ export type Artist = {
   lon?: number;
   styles: string[];
   bio: string;
+  bio_tl?: string;
+  home_service_available?: boolean;
+  home_service_fee?: number;
   rate_per_hour: number;
   avatar: string;
   hero: string;
@@ -47,12 +50,24 @@ export type Booking = {
   description: string;
   reference_image?: string | null;
   estimated_hours: number;
+  home_service?: boolean;
+  service_address?: string | null;
+  service_fee?: number;
   deposit: number;
   status: string;
   payment_status: string;
+  payment_method?: string | null;
   checkout_session_id?: string | null;
   payment_intent_id?: string | null;
   created_at: string;
+};
+
+export type Followup = {
+  booking_id: string;
+  artist_id: string;
+  artist_name: string;
+  artist_avatar: string;
+  date: string;
 };
 export type Review = {
   id: string;

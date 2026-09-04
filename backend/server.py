@@ -35,6 +35,19 @@ DEPOSIT_AMOUNT_MINOR = 290000  # ₱2,900 in centavos
 DEPOSIT_AMOUNT_MAJOR = 2900     # ₱2,900
 BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "")
 
+# Business — INKED platform commission (%)
+COMMISSION_PERCENT = int(os.environ.get("INKED_COMMISSION_PERCENT", "15"))
+
+def compute_split(amount_php: int) -> dict:
+    """Given a peso amount, return commission + artist_net in whole pesos (round half up)."""
+    commission = round(amount_php * COMMISSION_PERCENT / 100)
+    return {
+        "gross": amount_php,
+        "commission_pct": COMMISSION_PERCENT,
+        "commission": commission,
+        "artist_net": amount_php - commission,
+    }
+
 # Emergent Object Storage
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
@@ -72,6 +85,7 @@ class PublicUser(BaseModel):
     id: str
     email: str
     name: str
+    is_admin: bool = False
 
 
 class AuthOut(BaseModel):
@@ -91,12 +105,17 @@ class Artist(BaseModel):
     lon: float = 0.0
     styles: List[str]
     bio: str
+    bio_tl: str = ""
+    home_service_available: bool = False
+    home_service_fee: int = 0
     rate_per_hour: int
     avatar: str
     hero: str
     portfolio: List[str]
     rating: float = 0.0
     reviews_count: int = 0
+    active: bool = True
+    blocked_dates: List[str] = []  # ISO dates artist is unavailable
 
 
 class BookingIn(BaseModel):
@@ -106,6 +125,8 @@ class BookingIn(BaseModel):
     description: str
     reference_image: Optional[str] = None
     estimated_hours: int = 2
+    home_service: bool = False
+    service_address: Optional[str] = None
 
 
 class Booking(BaseModel):
@@ -119,6 +140,9 @@ class Booking(BaseModel):
     description: str
     reference_image: Optional[str] = None
     estimated_hours: int
+    home_service: bool = False
+    service_address: Optional[str] = None
+    service_fee: int = 0
     deposit: int
     status: str  # confirmed | completed | cancelled
     payment_status: str = "unpaid"  # unpaid | paid | refunded
@@ -204,7 +228,13 @@ async def current_user(authorization: Optional[str] = Header(None)):
 
 
 def public_user(u: dict) -> PublicUser:
-    return PublicUser(id=u["id"], email=u["email"], name=u["name"])
+    return PublicUser(id=u["id"], email=u["email"], name=u["name"], is_admin=bool(u.get("is_admin", False)))
+
+
+async def require_admin(user=Depends(current_user)):
+    if not user.get("is_admin"):
+        raise HTTPException(403, "Admin only")
+    return user
 
 
 # ---------- Auth ----------
@@ -220,10 +250,11 @@ async def register(body: RegisterIn):
         "email": email,
         "name": body.name.strip(),
         "password_hash": hash_password(body.password),
+        "is_admin": False,
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
-    return AuthOut(access_token=make_token(uid), user=PublicUser(id=uid, email=email, name=body.name.strip()))
+    return AuthOut(access_token=make_token(uid), user=PublicUser(id=uid, email=email, name=body.name.strip(), is_admin=False))
 
 
 @api_router.post("/auth/login", response_model=AuthOut)
@@ -243,7 +274,7 @@ async def me(user=Depends(current_user)):
 # ---------- Artists ----------
 @api_router.get("/artists", response_model=List[Artist])
 async def list_artists(style: Optional[str] = None, q: Optional[str] = None):
-    query: dict = {}
+    query: dict = {"$or": [{"active": {"$ne": False}}, {"active": {"$exists": False}}]}
     if style and style.lower() != "all":
         query["styles"] = {"$in": [style]}
     if q:
@@ -273,6 +304,8 @@ async def create_booking(body: BookingIn, user=Depends(current_user)):
         raise HTTPException(404, "Artist not found")
     bid = str(uuid.uuid4())
     deposit = DEPOSIT_AMOUNT_MAJOR  # flat deposit in PHP
+    home_service = bool(body.home_service and artist.get("home_service_available"))
+    service_fee = artist.get("home_service_fee", 0) if home_service else 0
     booking = {
         "id": bid,
         "user_id": user["id"],
@@ -284,6 +317,9 @@ async def create_booking(body: BookingIn, user=Depends(current_user)):
         "description": body.description,
         "reference_image": body.reference_image,
         "estimated_hours": body.estimated_hours,
+        "home_service": home_service,
+        "service_address": (body.service_address or "").strip() if home_service else None,
+        "service_fee": service_fee,
         "deposit": deposit,
         "status": "confirmed",
         "payment_status": "unpaid",
@@ -299,6 +335,33 @@ async def create_booking(body: BookingIn, user=Depends(current_user)):
 async def my_bookings(user=Depends(current_user)):
     docs = await db.bookings.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return docs
+
+
+@api_router.get("/bookings/followups")
+async def followups(user=Depends(current_user)):
+    """Recent past bookings that need a review — capped at 3."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    two_weeks_ago = (datetime.now(timezone.utc).date() - timedelta(days=14)).isoformat()
+    docs = await db.bookings.find(
+        {"user_id": user["id"], "status": {"$ne": "cancelled"}, "date": {"$gte": two_weeks_ago, "$lt": today}},
+        {"_id": 0},
+    ).sort("date", -1).to_list(20)
+    my_reviews = await db.reviews.find({"user_id": user["id"]}, {"_id": 0, "artist_id": 1}).to_list(500)
+    reviewed_artist_ids = {r["artist_id"] for r in my_reviews}
+    out = []
+    for b in docs:
+        if b["artist_id"] in reviewed_artist_ids:
+            continue
+        out.append({
+            "booking_id": b["id"],
+            "artist_id": b["artist_id"],
+            "artist_name": b["artist_name"],
+            "artist_avatar": b["artist_avatar"],
+            "date": b["date"],
+        })
+        if len(out) >= 3:
+            break
+    return out
 
 
 @api_router.post("/bookings/{booking_id}/cancel", response_model=Booking)
@@ -321,8 +384,8 @@ async def cancel_booking(booking_id: str, user=Depends(current_user)):
     if b.get("payment_status") == "paid" and hours_until >= 48:
         # Attempt refund
         pi_id = b.get("payment_intent_id") or ""
-        if pi_id.startswith("pi_mock_") or (b.get("checkout_session_id") or "").startswith("mock_"):
-            # Mock refund
+        if pi_id.startswith("pi_mock_") or pi_id.startswith("pi_test_") or (b.get("checkout_session_id") or "").startswith("mock_"):
+            # Mock/test refund
             updates["payment_status"] = "refunded"
             updates["refunded_at"] = now_iso()
             refunded = True
@@ -339,6 +402,11 @@ async def cancel_booking(booking_id: str, user=Depends(current_user)):
         refund_reason = "within_48h"
 
     await db.bookings.update_one({"id": booking_id}, {"$set": updates})
+    if refunded:
+        await db.earnings_ledger.update_one(
+            {"booking_id": booking_id},
+            {"$set": {"status": "refunded", "refunded_at": now_iso()}},
+        )
     b.update(updates)
     b["_refunded"] = refunded  # not part of response model, ignored
     return b
@@ -355,7 +423,15 @@ async def artist_availability(artist_id: str, date: str):
         {"artist_id": artist_id, "date": date, "status": {"$ne": "cancelled"}},
         {"_id": 0, "time_slot": 1},
     ).to_list(200)
-    return {"artist_id": artist_id, "date": date, "booked_slots": sorted({d["time_slot"] for d in docs})}
+    blocked_dates = artist.get("blocked_dates", []) or []
+    day_blocked = date in blocked_dates
+    return {
+        "artist_id": artist_id,
+        "date": date,
+        "booked_slots": sorted({d["time_slot"] for d in docs}),
+        "day_blocked": day_blocked,
+        "blocked_dates": blocked_dates,
+    }
 
 
 @api_router.get("/artists/{artist_id}/reviews", response_model=List[Review])
@@ -689,17 +765,45 @@ class MockConfirmIn(BaseModel):
 
 @api_router.post("/payments/mock-confirm")
 async def mock_confirm(body: MockConfirmIn, user=Depends(current_user)):
-    """Called by the mock checkout page to simulate a successful payment."""
+    """Called by the mock checkout page to simulate a successful payment (test mode)."""
     booking = await db.bookings.find_one({"checkout_session_id": body.session_id, "user_id": user["id"]}, {"_id": 0})
     if not booking:
         raise HTTPException(404, "Session not found")
+    if booking.get("payment_status") == "paid":
+        return {"paid": True, "booking_id": booking["id"]}
+    total = int(booking.get("deposit", 0)) + int(booking.get("service_fee", 0))
+    split = compute_split(total)
+    pi_id = f"pi_test_{uuid.uuid4().hex}"
     await db.bookings.update_one(
         {"id": booking["id"], "user_id": user["id"]},
         {"$set": {
             "payment_status": "paid",
-            "payment_intent_id": f"pi_mock_{uuid.uuid4().hex}",
+            "payment_intent_id": pi_id,
             "paid_at": now_iso(),
+            "amount_paid": total,
+            "commission_amount": split["commission"],
+            "artist_earnings": split["artist_net"],
+            "commission_pct": split["commission_pct"],
         }},
+    )
+    # Create ledger entry (idempotent via booking_id key)
+    await db.earnings_ledger.update_one(
+        {"booking_id": booking["id"]},
+        {"$setOnInsert": {
+            "id": str(uuid.uuid4()),
+            "booking_id": booking["id"],
+            "artist_id": booking["artist_id"],
+            "artist_name": booking["artist_name"],
+            "user_id": booking["user_id"],
+            "gross": total,
+            "commission_pct": split["commission_pct"],
+            "commission": split["commission"],
+            "artist_net": split["artist_net"],
+            "payment_intent_id": pi_id,
+            "status": "pending_payout",  # pending_payout | paid_out | refunded
+            "created_at": now_iso(),
+        }},
+        upsert=True,
     )
     return {"paid": True, "booking_id": booking["id"]}
 
@@ -775,6 +879,304 @@ async def featured():
         "deal_ends_at": end.isoformat(),
         "discount_pct": 15,
     }
+
+
+# ---------- Admin Dashboard ----------
+class AdminArtistIn(BaseModel):
+    name: str
+    handle: str
+    city: str
+    studio: str
+    address: str = ""
+    styles: List[str] = []
+    bio: str = ""
+    bio_tl: str = ""
+    rate_per_hour: int = 10000
+    avatar: str = ""
+    hero: str = ""
+    portfolio: List[str] = []
+    home_service_available: bool = False
+    home_service_fee: int = 0
+
+
+class AdminArtistPatch(BaseModel):
+    name: Optional[str] = None
+    handle: Optional[str] = None
+    city: Optional[str] = None
+    studio: Optional[str] = None
+    address: Optional[str] = None
+    styles: Optional[List[str]] = None
+    bio: Optional[str] = None
+    bio_tl: Optional[str] = None
+    rate_per_hour: Optional[int] = None
+    avatar: Optional[str] = None
+    hero: Optional[str] = None
+    portfolio: Optional[List[str]] = None
+    home_service_available: Optional[bool] = None
+    home_service_fee: Optional[int] = None
+    active: Optional[bool] = None
+    blocked_dates: Optional[List[str]] = None
+
+
+class PayoutIn(BaseModel):
+    artist_id: str
+    note: str = ""
+
+
+@api_router.get("/admin/stats")
+async def admin_stats(_=Depends(require_admin)):
+    users_count = await db.users.count_documents({})
+    artists_count = await db.artists.count_documents({})
+    bookings_total = await db.bookings.count_documents({})
+    bookings_paid = await db.bookings.count_documents({"payment_status": "paid"})
+    bookings_refunded = await db.bookings.count_documents({"payment_status": "refunded"})
+    bookings_cancelled = await db.bookings.count_documents({"status": "cancelled"})
+
+    # Revenue aggregates
+    pipeline = [
+        {"$match": {"payment_status": "paid"}},
+        {"$group": {
+            "_id": None,
+            "gross": {"$sum": {"$ifNull": ["$amount_paid", "$deposit"]}},
+            "commission": {"$sum": {"$ifNull": ["$commission_amount", 0]}},
+            "artist_earn": {"$sum": {"$ifNull": ["$artist_earnings", 0]}},
+        }},
+    ]
+    agg = await db.bookings.aggregate(pipeline).to_list(1)
+    gross = agg[0]["gross"] if agg else 0
+    commission = agg[0]["commission"] if agg else 0
+    artist_earn = agg[0]["artist_earn"] if agg else 0
+
+    # Pending payouts (paid but not yet paid_out and not refunded)
+    pending_pipeline = [
+        {"$match": {"status": "pending_payout"}},
+        {"$group": {"_id": None, "total": {"$sum": "$artist_net"}}},
+    ]
+    p_agg = await db.earnings_ledger.aggregate(pending_pipeline).to_list(1)
+    pending_payouts = p_agg[0]["total"] if p_agg else 0
+
+    return {
+        "users": users_count,
+        "artists": artists_count,
+        "bookings": {
+            "total": bookings_total,
+            "paid": bookings_paid,
+            "refunded": bookings_refunded,
+            "cancelled": bookings_cancelled,
+        },
+        "revenue": {
+            "gross": gross,
+            "commission_earned": commission,
+            "artist_earnings": artist_earn,
+            "pending_payouts": pending_payouts,
+        },
+        "commission_pct": COMMISSION_PERCENT,
+    }
+
+
+@api_router.get("/admin/users")
+async def admin_list_users(_=Depends(require_admin)):
+    docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    # Attach booking count per user
+    for u in docs:
+        u["bookings_count"] = await db.bookings.count_documents({"user_id": u["id"]})
+    return docs
+
+
+@api_router.post("/admin/users/{user_id}/toggle-admin")
+async def admin_toggle_admin(user_id: str, admin=Depends(require_admin)):
+    u = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not u:
+        raise HTTPException(404, "User not found")
+    new_val = not bool(u.get("is_admin", False))
+    await db.users.update_one({"id": user_id}, {"$set": {"is_admin": new_val}})
+    return {"user_id": user_id, "is_admin": new_val}
+
+
+@api_router.get("/admin/artists")
+async def admin_list_artists(_=Depends(require_admin)):
+    docs = await db.artists.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+    # Attach earnings summary
+    for a in docs:
+        pending = await db.earnings_ledger.aggregate([
+            {"$match": {"artist_id": a["id"], "status": "pending_payout"}},
+            {"$group": {"_id": None, "total": {"$sum": "$artist_net"}, "count": {"$sum": 1}}},
+        ]).to_list(1)
+        paid_out = await db.earnings_ledger.aggregate([
+            {"$match": {"artist_id": a["id"], "status": "paid_out"}},
+            {"$group": {"_id": None, "total": {"$sum": "$artist_net"}}},
+        ]).to_list(1)
+        a["pending_earnings"] = pending[0]["total"] if pending else 0
+        a["pending_count"] = pending[0]["count"] if pending else 0
+        a["paid_out_total"] = paid_out[0]["total"] if paid_out else 0
+        a["bookings_count"] = await db.bookings.count_documents({"artist_id": a["id"]})
+    return docs
+
+
+@api_router.post("/admin/artists")
+async def admin_create_artist(body: AdminArtistIn, _=Depends(require_admin)):
+    aid = str(uuid.uuid4())
+    doc = {
+        "id": aid,
+        "rating": 5.0,
+        "reviews_count": 0,
+        "lat": 0.0,
+        "lon": 0.0,
+        "active": True,
+        "blocked_dates": [],
+        **body.dict(),
+    }
+    await db.artists.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.patch("/admin/artists/{artist_id}")
+async def admin_update_artist(artist_id: str, body: AdminArtistPatch, _=Depends(require_admin)):
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No changes")
+    res = await db.artists.update_one({"id": artist_id}, {"$set": updates})
+    if not res.matched_count:
+        raise HTTPException(404, "Artist not found")
+    doc = await db.artists.find_one({"id": artist_id}, {"_id": 0})
+    return doc
+
+
+@api_router.delete("/admin/artists/{artist_id}")
+async def admin_delete_artist(artist_id: str, _=Depends(require_admin)):
+    # Soft-delete via active=False; hard delete only if no bookings
+    bcount = await db.bookings.count_documents({"artist_id": artist_id})
+    if bcount:
+        await db.artists.update_one({"id": artist_id}, {"$set": {"active": False}})
+        return {"deleted": False, "deactivated": True}
+    await db.artists.delete_one({"id": artist_id})
+    return {"deleted": True}
+
+
+@api_router.get("/admin/bookings")
+async def admin_list_bookings(status: Optional[str] = None, payment_status: Optional[str] = None, _=Depends(require_admin)):
+    q: dict = {}
+    if status:
+        q["status"] = status
+    if payment_status:
+        q["payment_status"] = payment_status
+    docs = await db.bookings.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Attach user email
+    user_ids = list({b["user_id"] for b in docs})
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "email": 1, "name": 1}).to_list(500)
+    umap = {u["id"]: u for u in users}
+    for b in docs:
+        u = umap.get(b["user_id"], {})
+        b["user_email"] = u.get("email", "—")
+        b["user_name"] = u.get("name", "—")
+    return docs
+
+
+@api_router.post("/admin/bookings/{booking_id}/refund")
+async def admin_refund_booking(booking_id: str, _=Depends(require_admin)):
+    b = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(404, "Booking not found")
+    if b.get("payment_status") != "paid":
+        raise HTTPException(409, "Booking is not paid")
+    pi_id = b.get("payment_intent_id") or ""
+    if pi_id.startswith("pi_mock_") or pi_id.startswith("pi_test_"):
+        # Test-mode refund
+        pass
+    elif pi_id and stripe.api_key and stripe.api_key not in ("sk_test_emergent", ""):
+        try:
+            await run_in_threadpool(lambda: stripe.Refund.create(payment_intent=pi_id))
+        except stripe.error.StripeError as e:
+            logger.exception("Refund failed: %s", e)
+            raise HTTPException(502, "Refund failed")
+    await db.bookings.update_one({"id": booking_id}, {"$set": {
+        "payment_status": "refunded",
+        "status": "cancelled",
+        "refunded_at": now_iso(),
+    }})
+    await db.earnings_ledger.update_one(
+        {"booking_id": booking_id},
+        {"$set": {"status": "refunded", "refunded_at": now_iso()}},
+    )
+    return {"refunded": True, "booking_id": booking_id}
+
+
+@api_router.get("/admin/payments")
+async def admin_payments(_=Depends(require_admin)):
+    docs = await db.bookings.find(
+        {"payment_status": {"$in": ["paid", "refunded"]}},
+        {"_id": 0},
+    ).sort("paid_at", -1).to_list(500)
+    return docs
+
+
+@api_router.get("/admin/commissions")
+async def admin_commissions(_=Depends(require_admin)):
+    # Group per artist
+    pipeline = [
+        {"$match": {"payment_status": "paid"}},
+        {"$group": {
+            "_id": "$artist_id",
+            "artist_name": {"$first": "$artist_name"},
+            "artist_avatar": {"$first": "$artist_avatar"},
+            "bookings": {"$sum": 1},
+            "gross": {"$sum": {"$ifNull": ["$amount_paid", "$deposit"]}},
+            "commission": {"$sum": {"$ifNull": ["$commission_amount", 0]}},
+            "artist_net": {"$sum": {"$ifNull": ["$artist_earnings", 0]}},
+        }},
+        {"$sort": {"gross": -1}},
+    ]
+    rows = await db.bookings.aggregate(pipeline).to_list(500)
+    return [{"artist_id": r["_id"], **{k: v for k, v in r.items() if k != "_id"}} for r in rows]
+
+
+@api_router.get("/admin/payouts")
+async def admin_payouts(_=Depends(require_admin)):
+    docs = await db.payouts.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return docs
+
+
+@api_router.post("/admin/payouts")
+async def admin_create_payout(body: PayoutIn, admin=Depends(require_admin)):
+    # Aggregate all pending ledger entries for the artist
+    entries = await db.earnings_ledger.find(
+        {"artist_id": body.artist_id, "status": "pending_payout"}, {"_id": 0}
+    ).to_list(500)
+    if not entries:
+        raise HTTPException(400, "No pending earnings for this artist")
+    total = sum(e.get("artist_net", 0) for e in entries)
+    artist = await db.artists.find_one({"id": body.artist_id}, {"_id": 0, "name": 1, "id": 1})
+    if not artist:
+        raise HTTPException(404, "Artist not found")
+    pid = str(uuid.uuid4())
+    payout = {
+        "id": pid,
+        "artist_id": body.artist_id,
+        "artist_name": artist["name"],
+        "amount": total,
+        "count": len(entries),
+        "note": body.note.strip(),
+        "created_by": admin["id"],
+        "created_by_name": admin["name"],
+        "created_at": now_iso(),
+        "status": "completed",
+        "booking_ids": [e["booking_id"] for e in entries],
+    }
+    await db.payouts.insert_one(payout)
+    # Mark ledger entries as paid_out
+    await db.earnings_ledger.update_many(
+        {"artist_id": body.artist_id, "status": "pending_payout"},
+        {"$set": {"status": "paid_out", "payout_id": pid, "paid_out_at": now_iso()}},
+    )
+    payout.pop("_id", None)
+    return payout
+
+
+@api_router.get("/admin/artists/{artist_id}/earnings")
+async def admin_artist_earnings(artist_id: str, _=Depends(require_admin)):
+    entries = await db.earnings_ledger.find({"artist_id": artist_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return entries
 
 
 # ---------- Seed ----------
@@ -894,19 +1296,78 @@ STUDIO_LOCATIONS = {
 }
 
 
+SEED_ARTIST_EXTRAS = {
+    "Kai Nakamura": {
+        "bio_tl": "Labinlimang taong niperpekto ang sining ng Irezumi. Malalakas na linya, matinding kulay, at kwentong itinatak sa balat.",
+        "home_service_available": True,
+        "home_service_fee": 4000,
+    },
+    "Mara Voss": {
+        "bio_tl": "Minimalist na single-needle na disenyo. Maliit, tumpak, at personal.",
+        "home_service_available": False,
+        "home_service_fee": 0,
+    },
+    "Diego Ruiz": {
+        "bio_tl": "Matinding itim, malalim na anino, at hyperrealist na portrait. Dalhin sa akin ang pinakamadidilim mong ideya.",
+        "home_service_available": True,
+        "home_service_fee": 5500,
+    },
+    "Yuki Sato": {
+        "bio_tl": "Photorealistic na portraiture. Tumpak sa bawat pore.",
+        "home_service_available": False,
+        "home_service_fee": 0,
+    },
+    "Ash Rowe": {
+        "bio_tl": "Sagradong geometry na nakikipag-ugnay sa negative space. Symmetry ang aking relihiyon.",
+        "home_service_available": True,
+        "home_service_fee": 3500,
+    },
+    "Nova Blake": {
+        "bio_tl": "American traditional na may modernong ikot. Malalakas na linya, walang pahiwatig.",
+        "home_service_available": True,
+        "home_service_fee": 4500,
+    },
+}
+
+
 @app.on_event("startup")
 async def seed_data():
+    # Seed admin user
+    admin_email = "admin@inked.dev"
+    existing_admin = await db.users.find_one({"email": admin_email})
+    if not existing_admin:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "email": admin_email,
+            "name": "INKED Admin",
+            "password_hash": hash_password("admin123"),
+            "is_admin": True,
+            "created_at": now_iso(),
+        })
+        logger.info("Seeded admin user: admin@inked.dev / admin123")
+    else:
+        # Ensure existing admin has is_admin flag set
+        if not existing_admin.get("is_admin"):
+            await db.users.update_one({"email": admin_email}, {"$set": {"is_admin": True}})
+
+    # Backfill is_admin=False for existing users
+    await db.users.update_many({"is_admin": {"$exists": False}}, {"$set": {"is_admin": False}})
+
     count = await db.artists.count_documents({})
     if count == 0:
         docs = []
         for a in SEED_ARTISTS:
             loc = STUDIO_LOCATIONS.get(a["studio"], {"address": "", "lat": 0.0, "lon": 0.0})
+            extras = SEED_ARTIST_EXTRAS.get(a["name"], {"bio_tl": "", "home_service_available": False, "home_service_fee": 0})
             docs.append({
                 "id": str(uuid.uuid4()),
                 "rating": round(4.5 + (0.5 * (hash(a["name"]) % 5) / 10), 1),
                 "reviews_count": 20 + (hash(a["name"]) % 40),
+                "active": True,
+                "blocked_dates": [],
                 **a,
                 **loc,
+                **extras,
             })
         await db.artists.insert_many(docs)
         logger.info(f"Seeded {len(docs)} artists")
@@ -921,8 +1382,49 @@ async def seed_data():
             new_rate = by_name.get(artist.get("name", ""))
             if new_rate:
                 await db.artists.update_one({"id": artist["id"]}, {"$set": {"rate_per_hour": new_rate}})
-        # Backfill legacy $50 deposits to new PHP deposit
+        # Backfill legacy deposits to new PHP deposit
         await db.bookings.update_many({"deposit": {"$lt": 100}}, {"$set": {"deposit": DEPOSIT_AMOUNT_MAJOR}})
+        # Backfill bio_tl + home service extras
+        async for artist in db.artists.find({"$or": [{"bio_tl": {"$exists": False}}, {"home_service_available": {"$exists": False}}]}, {"_id": 0, "id": 1, "name": 1}):
+            ex = SEED_ARTIST_EXTRAS.get(artist.get("name", ""), {"bio_tl": "", "home_service_available": False, "home_service_fee": 0})
+            await db.artists.update_one({"id": artist["id"]}, {"$set": ex})
+        # Backfill active + blocked_dates
+        await db.artists.update_many({"active": {"$exists": False}}, {"$set": {"active": True}})
+        await db.artists.update_many({"blocked_dates": {"$exists": False}}, {"$set": {"blocked_dates": []}})
+
+    # Backfill commission/earnings + ledger for existing paid bookings (idempotent)
+    async for b in db.bookings.find({"payment_status": "paid", "commission_amount": {"$exists": False}}, {"_id": 0}):
+        total = int(b.get("deposit", 0)) + int(b.get("service_fee", 0) or 0)
+        split = compute_split(total)
+        await db.bookings.update_one(
+            {"id": b["id"]},
+            {"$set": {
+                "amount_paid": total,
+                "commission_amount": split["commission"],
+                "artist_earnings": split["artist_net"],
+                "commission_pct": split["commission_pct"],
+            }},
+        )
+        # Ledger status: refunded if booking cancelled+refunded, else pending_payout
+        status = "refunded" if b.get("payment_status") == "refunded" else "pending_payout"
+        await db.earnings_ledger.update_one(
+            {"booking_id": b["id"]},
+            {"$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "booking_id": b["id"],
+                "artist_id": b["artist_id"],
+                "artist_name": b["artist_name"],
+                "user_id": b["user_id"],
+                "gross": total,
+                "commission_pct": split["commission_pct"],
+                "commission": split["commission"],
+                "artist_net": split["artist_net"],
+                "payment_intent_id": b.get("payment_intent_id"),
+                "status": status,
+                "created_at": b.get("paid_at") or b.get("created_at") or now_iso(),
+            }},
+            upsert=True,
+        )
 
 
 app.include_router(api_router)

@@ -49,6 +49,8 @@ export default function BookScreen() {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"card" | "gcash" | "maya">("card");
+  const [homeService, setHomeService] = useState(false);
+  const [serviceAddress, setServiceAddress] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -80,8 +82,9 @@ export default function BookScreen() {
   }, [bookedSlots, time]);
 
   const canStep1 = !!date && !!time;
-  const canStep2 = desc.trim().length > 5;
-  const total = (artist?.rate_per_hour ?? 0) * hours;
+  const canStep2 = desc.trim().length > 5 && (!homeService || serviceAddress.trim().length > 5);
+  const serviceFee = homeService && artist?.home_service_available ? (artist.home_service_fee ?? 0) : 0;
+  const total = (artist?.rate_per_hour ?? 0) * hours + serviceFee;
   const deposit = 2900;
 
   const pickImage = async () => {
@@ -133,6 +136,8 @@ export default function BookScreen() {
           description: desc,
           estimated_hours: hours,
           reference_image: refUrl,
+          home_service: homeService && !!artist?.home_service_available,
+          service_address: homeService ? serviceAddress.trim() : null,
         }),
       }, token);
       setBookingId(booking.id);
@@ -313,7 +318,50 @@ export default function BookScreen() {
 
         {step === 2 && (
           <>
-            <Text style={styles.label}>{t("book.describe")}</Text>
+            <Text style={styles.label}>{t("book.location")}</Text>
+            <View style={styles.locRow}>
+              <Pressable
+                testID="location-studio"
+                onPress={() => setHomeService(false)}
+                style={[styles.locBtn, !homeService && styles.locBtnActive]}
+              >
+                <Icon name="home" size={16} color={!homeService ? colors.onBrand : colors.onSurface} />
+                <Text style={[styles.locText, !homeService && styles.locTextActive]}>{t("book.atStudio")}</Text>
+              </Pressable>
+              <Pressable
+                testID="location-home"
+                onPress={() => artist.home_service_available && setHomeService(true)}
+                disabled={!artist.home_service_available}
+                style={[styles.locBtn, homeService && styles.locBtnActive, !artist.home_service_available && styles.locBtnDisabled]}
+              >
+                <Icon name="truck" size={16} color={!artist.home_service_available ? colors.muted : homeService ? colors.onBrand : colors.onSurface} />
+                <Text style={[styles.locText, homeService && styles.locTextActive, !artist.home_service_available && { color: colors.muted }]}>
+                  {t("book.homeService")}
+                </Text>
+              </Pressable>
+            </View>
+            {artist.home_service_available ? (
+              <Text style={styles.hint}>{t("book.homeService.hint")} · +{fmtPHP(artist.home_service_fee ?? 0)}</Text>
+            ) : (
+              <Text style={styles.hint}>{t("book.homeService.unavailable")}</Text>
+            )}
+
+            {homeService && (
+              <View style={{ marginTop: spacing.md }}>
+                <Text style={styles.label}>{t("book.homeService.address")}</Text>
+                <TextInput
+                  testID="book-service-address-input"
+                  value={serviceAddress}
+                  onChangeText={setServiceAddress}
+                  placeholder={t("book.homeService.addressPlaceholder")}
+                  placeholderTextColor={colors.muted}
+                  style={styles.input}
+                  multiline
+                />
+              </View>
+            )}
+
+            <Text style={[styles.label, { marginTop: spacing.md }]}>{t("book.describe")}</Text>
             <TextInput
               testID="book-description-input"
               value={desc}
@@ -354,6 +402,9 @@ export default function BookScreen() {
               <SummaryRow k={t("book.time")} v={time} />
               <SummaryRow k={t("book.hours")} v={`${hours}H`} />
               <SummaryRow k={t("book.rate")} v={`${fmtPHP(artist.rate_per_hour)}/HR`} />
+              {homeService && serviceFee > 0 && (
+                <SummaryRow k={t("book.homeService.fee")} v={`+${fmtPHP(serviceFee)}`} />
+              )}
               <View style={styles.divider} />
               <SummaryRow k={t("book.total")} v={fmtPHP(total)} big />
               <SummaryRow k={t("book.depositDue")} v={fmtPHP(deposit)} accent />
@@ -496,6 +547,13 @@ const styles = StyleSheet.create({
   methodDot: { width: 28, height: 28, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.borderStrong },
   methodText: { color: colors.onSurface, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
   methodTextActive: { color: colors.onBrand },
+  locRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  locBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, paddingVertical: 14, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
+  locBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  locBtnDisabled: { opacity: 0.5 },
+  locText: { color: colors.onSurface, fontSize: 12, fontWeight: "900", letterSpacing: 1.5 },
+  locTextActive: { color: colors.onBrand },
+  input: { backgroundColor: colors.surfaceSecondary, borderWidth: 2, borderColor: colors.border, color: colors.onSurface, paddingVertical: 12, paddingHorizontal: spacing.md, fontSize: 14, minHeight: 60, textAlignVertical: "top" },
   stickyBar: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: colors.surface, borderTopWidth: 2, borderTopColor: colors.borderStrong, padding: spacing.md },
   bookBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.brand, paddingHorizontal: spacing.lg, paddingVertical: 16 },
   bookText: { color: colors.onBrand, fontSize: 16, fontWeight: "900", letterSpacing: 2 },
