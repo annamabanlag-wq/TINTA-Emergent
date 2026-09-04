@@ -1,20 +1,47 @@
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../../src/session";
 import { useI18n, Locale } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
+import { api } from "../../src/api";
 
 export default function ProfileTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, signOut } = useSession();
+  const { user, token, signOut } = useSession();
   const { t, locale, setLocale } = useI18n();
 
   const doSignOut = async () => {
     await signOut();
     router.replace("/(auth)/sign-in");
+  };
+
+  const confirmDelete = () => {
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined" ? window.confirm(t("profile.delete.confirm.body")) : false;
+      if (ok) doDelete();
+      return;
+    }
+    Alert.alert(
+      t("profile.delete.confirm.title"),
+      t("profile.delete.confirm.body"),
+      [
+        { text: t("profile.delete.cancel"), style: "cancel" },
+        { text: t("profile.delete.confirm.cta"), style: "destructive", onPress: doDelete },
+      ],
+    );
+  };
+
+  const doDelete = async () => {
+    try {
+      await api("/auth/me", { method: "DELETE" }, token);
+      await signOut();
+      router.replace("/(auth)/sign-in");
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Failed to delete account");
+    }
   };
 
   const initials = (user?.name ?? "IN")
@@ -71,13 +98,18 @@ export default function ProfileTab() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("profile.section.support")}</Text>
-        <Row icon="help-circle" label={t("profile.help")} onPress={() => {}} testID="profile-help-row" />
-        <Row icon="shield" label={t("profile.privacy")} onPress={() => {}} testID="profile-privacy-row" />
+        <Row icon="help-circle" label={t("profile.help")} onPress={() => router.push("/help")} testID="profile-help-row" />
+        <Row icon="shield" label={t("profile.privacy")} onPress={() => router.push("/privacy")} testID="profile-privacy-row" />
       </View>
 
       <Pressable testID="signout-button" onPress={doSignOut} style={styles.signOut}>
         <Icon name="log-out" size={16} color={colors.brand} />
         <Text style={styles.signOutText}>{t("profile.signout")}</Text>
+      </Pressable>
+
+      <Pressable testID="delete-account-button" onPress={confirmDelete} style={styles.deleteBtn}>
+        <Icon name="trash-2" size={14} color={colors.muted} />
+        <Text style={styles.deleteText}>{t("profile.delete")}</Text>
       </Pressable>
 
       <Text style={styles.version}>INKED v1.0.0</Text>
@@ -116,5 +148,7 @@ const styles = StyleSheet.create({
   langTextActive: { color: colors.onBrand },
   signOut: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginHorizontal: spacing.lg, marginTop: spacing.xl, paddingVertical: spacing.md, borderWidth: 2, borderColor: colors.brand },
   signOutText: { color: colors.brand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
+  deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginHorizontal: spacing.lg, marginTop: spacing.md, paddingVertical: spacing.md, borderWidth: 1, borderColor: colors.border },
+  deleteText: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
   version: { color: colors.muted, fontSize: 10, textAlign: "center", marginTop: spacing.xl, letterSpacing: 2 },
 });

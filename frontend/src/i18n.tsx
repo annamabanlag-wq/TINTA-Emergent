@@ -111,6 +111,14 @@ const DICT: Record<string, Record<Locale, string>> = {
   "profile.privacy": { en: "PRIVACY & TERMS", tl: "PRIVACY AT TERMS" },
   "profile.language": { en: "LANGUAGE", tl: "WIKA" },
   "profile.signout": { en: "SIGN OUT", tl: "MAG-SIGN OUT" },
+  "profile.delete": { en: "DELETE MY ACCOUNT", tl: "BURAHIN ANG ACCOUNT KO" },
+  "profile.delete.confirm.title": { en: "DELETE ACCOUNT", tl: "BURAHIN ANG ACCOUNT" },
+  "profile.delete.confirm.body": {
+    en: "This permanently removes your account, bookings history, messages, favorites, and reviews. This cannot be undone.",
+    tl: "Permanenteng buburahin nito ang iyong account, mga booking, mensahe, favorites, at reviews. Hindi na ito maibabalik.",
+  },
+  "profile.delete.confirm.cta": { en: "DELETE FOREVER", tl: "TULUYANG BURAHIN" },
+  "profile.delete.cancel": { en: "KEEP ACCOUNT", tl: "PANATILIHIN" },
 
   // Language toggle
   "lang.english": { en: "ENGLISH", tl: "ENGLISH" },

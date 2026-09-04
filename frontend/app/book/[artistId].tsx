@@ -142,11 +142,14 @@ export default function BookScreen() {
       }, token);
       setBookingId(booking.id);
 
-      // 3. Create checkout session
+      // 3. Create checkout session (pass deep-link return URL so native Stripe can round-trip)
       const platform = Platform.OS === "web" ? "web" : "native";
+      const return_url = Platform.OS === "web"
+        ? (typeof window !== "undefined" ? `${window.location.origin}/payment/return` : undefined)
+        : Linking.createURL("payment/return");
       const session = await api<CheckoutSessionOut>("/payments/checkout-session", {
         method: "POST",
-        body: JSON.stringify({ booking_id: booking.id, platform, payment_method: paymentMethod }),
+        body: JSON.stringify({ booking_id: booking.id, platform, payment_method: paymentMethod, return_url }),
       }, token);
 
       // 4. Handle checkout

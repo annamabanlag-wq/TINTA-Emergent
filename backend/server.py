@@ -24,7 +24,9 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "inked-dev-secret-change-me")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET is required — set it in the environment")
 JWT_ALG = "HS256"
 JWT_MINUTES = 60 * 24 * 7  # 7 days
 
@@ -33,7 +35,15 @@ stripe.api_key = os.environ.get("STRIPE_API_KEY", "")
 CURRENCY = "php"
 DEPOSIT_AMOUNT_MINOR = 290000  # ₱2,900 in centavos
 DEPOSIT_AMOUNT_MAJOR = 2900     # ₱2,900
-BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "")
+
+# Public URL used for callback/redirect URLs. Prefer APP_URL (Emergent deploy injects this at
+# runtime) over any committed BACKEND_PUBLIC_URL so deploy env always wins.
+PUBLIC_URL = (
+    os.environ.get("APP_URL")
+    or os.environ.get("BACKEND_PUBLIC_URL")
+    or ""
+).rstrip("/")
+BACKEND_PUBLIC_URL = PUBLIC_URL  # kept for backwards compatibility with existing refs
 
 # Business — INKED platform commission (%)
 COMMISSION_PERCENT = int(os.environ.get("INKED_COMMISSION_PERCENT", "15"))
@@ -269,6 +279,24 @@ async def login(body: LoginIn):
 @api_router.get("/auth/me", response_model=PublicUser)
 async def me(user=Depends(current_user)):
     return public_user(user)
+
+
+@api_router.delete("/auth/me")
+async def delete_me(user=Depends(current_user)):
+    """Permanently delete the caller's account and personal data (Apple/Play compliance)."""
+    uid = user["id"]
+    # Cancel all upcoming bookings (soft-cancel; refund reversal not applied since account is going away)
+    await db.bookings.update_many({"user_id": uid, "status": {"$ne": "cancelled"}}, {"$set": {"status": "cancelled"}})
+    # Delete personal collections
+    await db.favorites.delete_many({"user_id": uid})
+    await db.messages.delete_many({"from_user_id": uid})
+    await db.threads.delete_many({"user_id": uid})
+    await db.reviews.delete_many({"user_id": uid})
+    # Anonymize booking user_id references so admin history is preserved without PII
+    await db.bookings.update_many({"user_id": uid}, {"$set": {"user_id": f"deleted:{uid[:8]}"}})
+    # Finally remove the user account
+    await db.users.delete_one({"id": uid})
+    return {"deleted": True}
 
 
 # ---------- Artists ----------
@@ -624,8 +652,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
         "created_at": now_iso(),
     })
     # Build API URL that clients use to fetch
-    base = os.environ.get("BACKEND_PUBLIC_URL") or ""
-    file_url = f"{base}/api/files/{stored_path}"
+    file_url = f"{PUBLIC_URL}/api/files/{stored_path}" if PUBLIC_URL else f"/api/files/{stored_path}"
     return {"url": file_url, "path": stored_path, "size": len(data)}
 
 
@@ -653,6 +680,9 @@ class CheckoutIn(BaseModel):
     booking_id: str
     platform: str = "native"  # "native" | "web"
     payment_method: str = "card"  # "card" | "gcash" | "maya"
+    # Optional client-supplied return URL (native apps should pass their deep link, e.g.
+    # `Linking.createURL('payment/return')` → `inked://payment/return`). Falls back to PUBLIC_URL.
+    return_url: Optional[str] = None
 
 
 STRIPE_METHOD_MAP = {
@@ -661,6 +691,14 @@ STRIPE_METHOD_MAP = {
     # Maya not natively supported by Stripe — falls back to card + mock label
     "maya": ["card"],
 }
+
+
+def _return_url(client_return: Optional[str], fallback_base: str, query: str) -> str:
+    """Build a Stripe return URL. Prefer a client-provided deep link/universal link;
+    fall back to the deploy public URL. Ensures native apps can round-trip properly."""
+    base = (client_return or "").strip() or (fallback_base.rstrip("/") + "/payment/return" if fallback_base else "/payment/return")
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}{query}"
 
 
 @api_router.post("/payments/checkout-session")
@@ -673,7 +711,7 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
 
     # If Stripe not configured with a real key, use a mock checkout page
     is_placeholder = (not stripe.api_key) or stripe.api_key in ("sk_test_emergent", "")
-    frontend_base = os.environ.get("BACKEND_PUBLIC_URL") or "https://tattoo-reserve-7.preview.emergentagent.com"
+    frontend_base = PUBLIC_URL
     method = (body.payment_method or "card").lower()
     if method not in STRIPE_METHOD_MAP:
         raise HTTPException(400, "Unsupported payment method")
@@ -687,8 +725,8 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
         checkout_url = f"{frontend_base}/mock-checkout?session_id={mock_session_id}&booking_id={body.booking_id}&amount={DEPOSIT_AMOUNT_MINOR}&method={method}"
         return {"checkout_url": checkout_url, "session_id": mock_session_id, "mock": True, "payment_method": method}
 
-    success_url = f"{frontend_base}/payment/return?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{frontend_base}/payment/return?cancelled=1"
+    success_url = _return_url(body.return_url, frontend_base, "session_id={CHECKOUT_SESSION_ID}")
+    cancel_url = _return_url(body.return_url, frontend_base, "cancelled=1")
     try:
         session = await run_in_threadpool(lambda: stripe.checkout.Session.create(
             mode="payment",
@@ -977,9 +1015,13 @@ async def admin_stats(_=Depends(require_admin)):
 @api_router.get("/admin/users")
 async def admin_list_users(_=Depends(require_admin)):
     docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
-    # Attach booking count per user
+    # Batch bookings count in one aggregation
+    counts_agg = await db.bookings.aggregate([
+        {"$group": {"_id": "$user_id", "n": {"$sum": 1}}},
+    ]).to_list(2000)
+    cmap = {c["_id"]: c["n"] for c in counts_agg}
     for u in docs:
-        u["bookings_count"] = await db.bookings.count_documents({"user_id": u["id"]})
+        u["bookings_count"] = cmap.get(u["id"], 0)
     return docs
 
 
@@ -996,20 +1038,27 @@ async def admin_toggle_admin(user_id: str, admin=Depends(require_admin)):
 @api_router.get("/admin/artists")
 async def admin_list_artists(_=Depends(require_admin)):
     docs = await db.artists.find({}, {"_id": 0}).sort("name", 1).to_list(500)
-    # Attach earnings summary
+    # Batch ledger + booking aggregates in three grouped queries
+    pending_agg = await db.earnings_ledger.aggregate([
+        {"$match": {"status": "pending_payout"}},
+        {"$group": {"_id": "$artist_id", "total": {"$sum": "$artist_net"}, "count": {"$sum": 1}}},
+    ]).to_list(2000)
+    paid_agg = await db.earnings_ledger.aggregate([
+        {"$match": {"status": "paid_out"}},
+        {"$group": {"_id": "$artist_id", "total": {"$sum": "$artist_net"}}},
+    ]).to_list(2000)
+    bookings_agg = await db.bookings.aggregate([
+        {"$group": {"_id": "$artist_id", "n": {"$sum": 1}}},
+    ]).to_list(2000)
+    pmap = {r["_id"]: r for r in pending_agg}
+    pomap = {r["_id"]: r["total"] for r in paid_agg}
+    bmap = {r["_id"]: r["n"] for r in bookings_agg}
     for a in docs:
-        pending = await db.earnings_ledger.aggregate([
-            {"$match": {"artist_id": a["id"], "status": "pending_payout"}},
-            {"$group": {"_id": None, "total": {"$sum": "$artist_net"}, "count": {"$sum": 1}}},
-        ]).to_list(1)
-        paid_out = await db.earnings_ledger.aggregate([
-            {"$match": {"artist_id": a["id"], "status": "paid_out"}},
-            {"$group": {"_id": None, "total": {"$sum": "$artist_net"}}},
-        ]).to_list(1)
-        a["pending_earnings"] = pending[0]["total"] if pending else 0
-        a["pending_count"] = pending[0]["count"] if pending else 0
-        a["paid_out_total"] = paid_out[0]["total"] if paid_out else 0
-        a["bookings_count"] = await db.bookings.count_documents({"artist_id": a["id"]})
+        p = pmap.get(a["id"], {"total": 0, "count": 0})
+        a["pending_earnings"] = p["total"]
+        a["pending_count"] = p["count"]
+        a["paid_out_total"] = pomap.get(a["id"], 0)
+        a["bookings_count"] = bmap.get(a["id"], 0)
     return docs
 
 
@@ -1332,23 +1381,26 @@ SEED_ARTIST_EXTRAS = {
 
 @app.on_event("startup")
 async def seed_data():
-    # Seed admin user
-    admin_email = "admin@inked.dev"
-    existing_admin = await db.users.find_one({"email": admin_email})
-    if not existing_admin:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()),
-            "email": admin_email,
-            "name": "INKED Admin",
-            "password_hash": hash_password("admin123"),
-            "is_admin": True,
-            "created_at": now_iso(),
-        })
-        logger.info("Seeded admin user: admin@inked.dev / admin123")
-    else:
-        # Ensure existing admin has is_admin flag set
-        if not existing_admin.get("is_admin"):
-            await db.users.update_one({"email": admin_email}, {"$set": {"is_admin": True}})
+    # Env-driven admin seeding (opt-in). Provide INKED_ADMIN_EMAIL + INKED_ADMIN_PASSWORD
+    # in the deployment environment to auto-provision (or promote) an admin on startup.
+    admin_email = (os.environ.get("INKED_ADMIN_EMAIL") or "").strip().lower()
+    admin_password = os.environ.get("INKED_ADMIN_PASSWORD") or ""
+    if admin_email and admin_password:
+        existing_admin = await db.users.find_one({"email": admin_email})
+        if not existing_admin:
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()),
+                "email": admin_email,
+                "name": os.environ.get("INKED_ADMIN_NAME") or "INKED Admin",
+                "password_hash": hash_password(admin_password),
+                "is_admin": True,
+                "created_at": now_iso(),
+            })
+            logger.info("Provisioned admin user from environment")
+        else:
+            # Ensure existing admin has is_admin flag set (idempotent)
+            if not existing_admin.get("is_admin"):
+                await db.users.update_one({"email": admin_email}, {"$set": {"is_admin": True}})
 
     # Backfill is_admin=False for existing users
     await db.users.update_many({"is_admin": {"$exists": False}}, {"$set": {"is_admin": False}})
