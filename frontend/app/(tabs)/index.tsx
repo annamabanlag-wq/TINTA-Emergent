@@ -9,6 +9,7 @@ import { api, Artist, Featured } from "../../src/api";
 import { useSession } from "../../src/session";
 import { useFavorites } from "../../src/favorites";
 import { colors, spacing } from "../../src/theme";
+import { fmtPHP } from "../../src/currency";
 
 const STYLES = ["All", "Blackwork", "Fineline", "Traditional", "Realism", "Japanese", "Neo-Traditional", "Geometric"];
 
@@ -183,7 +184,7 @@ export default function Discover() {
                           <Icon name="star" size={10} color={colors.warning} />
                           <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
                         </View>
-                        <Text style={styles.cardRate}>${item.rate_per_hour}/HR</Text>
+                        <Text style={styles.cardRate}>{fmtPHP(item.rate_per_hour)}/HR</Text>
                       </View>
                       <View>
                         <Text style={styles.cardName}>{item.name.toUpperCase()}</Text>

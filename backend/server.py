@@ -30,7 +30,9 @@ JWT_MINUTES = 60 * 24 * 7  # 7 days
 
 # Stripe
 stripe.api_key = os.environ.get("STRIPE_API_KEY", "")
-DEPOSIT_AMOUNT_CENTS = 5000  # $50
+CURRENCY = "php"
+DEPOSIT_AMOUNT_MINOR = 290000  # ₱2,900 in centavos
+DEPOSIT_AMOUNT_MAJOR = 2900     # ₱2,900
 BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "")
 
 # Emergent Object Storage
@@ -269,7 +271,7 @@ async def create_booking(body: BookingIn, user=Depends(current_user)):
     if not artist:
         raise HTTPException(404, "Artist not found")
     bid = str(uuid.uuid4())
-    deposit = 50  # flat deposit in USD
+    deposit = DEPOSIT_AMOUNT_MAJOR  # flat deposit in PHP
     booking = {
         "id": bid,
         "user_id": user["id"],
@@ -342,6 +344,19 @@ async def cancel_booking(booking_id: str, user=Depends(current_user)):
 
 
 # ---------- Reviews ----------
+@api_router.get("/artists/{artist_id}/availability")
+async def artist_availability(artist_id: str, date: str):
+    """Return the list of time_slots already booked for this artist on given date (YYYY-MM-DD)."""
+    artist = await db.artists.find_one({"id": artist_id}, {"_id": 0})
+    if not artist:
+        raise HTTPException(404, "Artist not found")
+    docs = await db.bookings.find(
+        {"artist_id": artist_id, "date": date, "status": {"$ne": "cancelled"}},
+        {"_id": 0, "time_slot": 1},
+    ).to_list(200)
+    return {"artist_id": artist_id, "date": date, "booked_slots": sorted({d["time_slot"] for d in docs})}
+
+
 @api_router.get("/artists/{artist_id}/reviews", response_model=List[Review])
 async def artist_reviews(artist_id: str):
     docs = await db.reviews.find({"artist_id": artist_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -581,7 +596,7 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
             {"$set": {"checkout_session_id": mock_session_id, "payment_status": "unpaid"}},
         )
         # Point at our own mock checkout page hosted by the app
-        checkout_url = f"{frontend_base}/mock-checkout?session_id={mock_session_id}&booking_id={body.booking_id}&amount={DEPOSIT_AMOUNT_CENTS}"
+        checkout_url = f"{frontend_base}/mock-checkout?session_id={mock_session_id}&booking_id={body.booking_id}&amount={DEPOSIT_AMOUNT_MINOR}"
         return {"checkout_url": checkout_url, "session_id": mock_session_id, "mock": True}
 
     success_url = f"{frontend_base}/payment/return?session_id={{CHECKOUT_SESSION_ID}}"
@@ -591,9 +606,9 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
             mode="payment",
             line_items=[{
                 "price_data": {
-                    "currency": "usd",
+                    "currency": CURRENCY,
                     "product_data": {"name": f"Tattoo deposit — {booking['artist_name']}"},
-                    "unit_amount": DEPOSIT_AMOUNT_CENTS,
+                    "unit_amount": DEPOSIT_AMOUNT_MINOR,
                 },
                 "quantity": 1,
             }],
@@ -638,7 +653,7 @@ async def verify_payment(session_id: str, user=Depends(current_user)):
         raise HTTPException(403, "Not your session")
     if session.get("mode") != "payment":
         raise HTTPException(400, "Wrong mode")
-    if session.get("currency") != "usd" or session.get("amount_total") != DEPOSIT_AMOUNT_CENTS:
+    if session.get("currency") != CURRENCY or session.get("amount_total") != DEPOSIT_AMOUNT_MINOR:
         raise HTTPException(400, "Amount mismatch")
 
     if session.get("payment_status") == "paid":
@@ -758,7 +773,7 @@ SEED_ARTISTS = [
         "studio": "Black Iron Tattoo",
         "styles": ["Japanese", "Traditional", "Neo-Traditional"],
         "bio": "Fifteen years perfecting the craft of Irezumi. Bold lines, saturated color, and stories carved into skin.",
-        "rate_per_hour": 220,
+        "rate_per_hour": 12500,
         "avatar": "https://images.unsplash.com/photo-1621787279722-c06fe6c18cf7?w=400&q=80",
         "hero": "https://images.unsplash.com/photo-1568515045052-f9a854d70bfd?w=1200&q=80",
         "portfolio": [
@@ -775,7 +790,7 @@ SEED_ARTISTS = [
         "studio": "Needle & Ink",
         "styles": ["Fineline", "Geometric"],
         "bio": "Minimalist single-needle work. Small, precise, and personal.",
-        "rate_per_hour": 180,
+        "rate_per_hour": 10000,
         "avatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&q=80",
         "hero": "https://images.unsplash.com/photo-1547754145-ef9ff306e3f3?w=1200&q=80",
         "portfolio": [
@@ -792,7 +807,7 @@ SEED_ARTISTS = [
         "studio": "Cuervo Tattoo",
         "styles": ["Blackwork", "Realism"],
         "bio": "Heavy black, deep shadows, and hyperrealist portraits. Bring me your darkest ideas.",
-        "rate_per_hour": 250,
+        "rate_per_hour": 14000,
         "avatar": "https://images.unsplash.com/photo-1607346256330-dee7af15f7c5?w=400&q=80",
         "hero": "https://images.unsplash.com/photo-1775135436883-56af5c10a476?w=1200&q=80",
         "portfolio": [
@@ -809,7 +824,7 @@ SEED_ARTISTS = [
         "studio": "Shinjuku Ink Lab",
         "styles": ["Realism", "Japanese"],
         "bio": "Photorealistic portraiture. Precision in every pore.",
-        "rate_per_hour": 300,
+        "rate_per_hour": 17000,
         "avatar": "https://images.unsplash.com/photo-1600180758890-6b94519a8ba6?w=400&q=80",
         "hero": "https://images.unsplash.com/photo-1605647533135-51b5906087d0?w=1200&q=80",
         "portfolio": [
@@ -826,7 +841,7 @@ SEED_ARTISTS = [
         "studio": "Cold Steel Studio",
         "styles": ["Geometric", "Blackwork"],
         "bio": "Sacred geometry meets negative space. Symmetry is my religion.",
-        "rate_per_hour": 200,
+        "rate_per_hour": 11500,
         "avatar": "https://images.unsplash.com/photo-1531891437562-4301cf35b7e4?w=400&q=80",
         "hero": "https://images.unsplash.com/photo-1568515387631-8b650bbcdb90?w=1200&q=80",
         "portfolio": [
@@ -843,7 +858,7 @@ SEED_ARTISTS = [
         "studio": "Sailor's Rest",
         "styles": ["Traditional", "Neo-Traditional"],
         "bio": "American traditional with a modern twist. Bold lines, no apologies.",
-        "rate_per_hour": 190,
+        "rate_per_hour": 11000,
         "avatar": "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=400&q=80",
         "hero": "https://images.unsplash.com/photo-1552627019-947c3789ffb5?w=1200&q=80",
         "portfolio": [
@@ -887,6 +902,14 @@ async def seed_data():
         async for artist in db.artists.find({"$or": [{"lat": {"$exists": False}}, {"address": {"$exists": False}}]}, {"_id": 0, "id": 1, "studio": 1}):
             loc = STUDIO_LOCATIONS.get(artist.get("studio", ""), {"address": "", "lat": 0.0, "lon": 0.0})
             await db.artists.update_one({"id": artist["id"]}, {"$set": loc})
+        # Backfill PHP rates — update any artist with a USD-era rate (< 1000) to the new PHP amount
+        by_name = {a["name"]: a["rate_per_hour"] for a in SEED_ARTISTS}
+        async for artist in db.artists.find({"rate_per_hour": {"$lt": 1000}}, {"_id": 0, "id": 1, "name": 1}):
+            new_rate = by_name.get(artist.get("name", ""))
+            if new_rate:
+                await db.artists.update_one({"id": artist["id"]}, {"$set": {"rate_per_hour": new_rate}})
+        # Backfill legacy $50 deposits to new PHP deposit
+        await db.bookings.update_many({"deposit": {"$lt": 100}}, {"$set": {"deposit": DEPOSIT_AMOUNT_MAJOR}})
 
 
 app.include_router(api_router)

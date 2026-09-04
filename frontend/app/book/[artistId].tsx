@@ -10,6 +10,7 @@ import * as Linking from "expo-linking";
 import { api, Artist, uploadImage, CheckoutSessionOut, VerifyOut } from "../../src/api";
 import { useSession } from "../../src/session";
 import { colors, spacing } from "../../src/theme";
+import { fmtPHP } from "../../src/currency";
 
 const TIMES = ["10:00", "12:00", "14:00", "16:00", "18:00"];
 const HOURS = [1, 2, 3, 4, 5, 6];
@@ -43,6 +44,8 @@ export default function BookScreen() {
   const [done, setDone] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -50,10 +53,33 @@ export default function BookScreen() {
     })();
   }, [artistId]);
 
+  // Load booked slots when date changes
+  useEffect(() => {
+    if (!date) { setBookedSlots([]); return; }
+    let cancelled = false;
+    (async () => {
+      setLoadingSlots(true);
+      try {
+        const res = await api<{ booked_slots: string[] }>(`/artists/${artistId}/availability?date=${date}`);
+        if (!cancelled) setBookedSlots(res.booked_slots);
+      } catch {
+        if (!cancelled) setBookedSlots([]);
+      } finally {
+        if (!cancelled) setLoadingSlots(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [artistId, date]);
+
+  // Reset time if it becomes unavailable
+  useEffect(() => {
+    if (time && bookedSlots.includes(time)) setTime("");
+  }, [bookedSlots, time]);
+
   const canStep1 = !!date && !!time;
   const canStep2 = desc.trim().length > 5;
   const total = (artist?.rate_per_hour ?? 0) * hours;
-  const deposit = 50;
+  const deposit = 2900;
 
   const pickImage = async () => {
     try {
@@ -121,16 +147,16 @@ export default function BookScreen() {
         const confirmed = await new Promise<boolean>((resolve) => {
           if (Platform.OS === "web") {
             const ok = typeof window !== "undefined"
-              ? window.confirm(`Pay $${deposit} deposit? (mock payment — no real charge)`)
+              ? window.confirm(`Pay ${fmtPHP(deposit)} deposit? (mock payment — no real charge)`)
               : true;
             resolve(ok);
           } else {
             Alert.alert(
               "Confirm Payment",
-              `Pay $${deposit} deposit? (Mock payment — real Stripe key not configured)`,
+              `Pay ${fmtPHP(deposit)} deposit? (Mock payment — real Stripe key not configured)`,
               [
                 { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                { text: `Pay $${deposit}`, style: "default", onPress: () => resolve(true) },
+                { text: `Pay ${fmtPHP(deposit)}`, style: "default", onPress: () => resolve(true) },
               ]
             );
           }
@@ -186,7 +212,7 @@ export default function BookScreen() {
           <Text style={styles.doneTitle}>BOOKING{"\n"}CONFIRMED</Text>
           <Text style={styles.doneMeta}>{artist.name.toUpperCase()} · {date} @ {time}</Text>
           <Text style={styles.doneNote}>
-            {paid ? `DEPOSIT $${deposit} PAID` : `DEPOSIT $${deposit} PENDING`} · TOTAL ~${total}
+            {paid ? `DEPOSIT ${fmtPHP(deposit)} PAID` : `DEPOSIT ${fmtPHP(deposit)} PENDING`} · TOTAL ~{fmtPHP(total)}
           </Text>
           <Pressable testID="done-view-bookings" onPress={() => router.replace("/(tabs)/bookings")} style={styles.doneCta}>
             <Text style={styles.doneCtaText}>VIEW MY BOOKINGS</Text>
@@ -240,17 +266,31 @@ export default function BookScreen() {
               </ScrollView>
             </View>
             <View>
-              <Text style={styles.label}>TIME</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>TIME</Text>
+                {loadingSlots ? <Text style={styles.slotLoading}>CHECKING AVAILABILITY...</Text> : null}
+              </View>
               <View style={styles.timeGrid}>
                 {TIMES.map((t) => {
                   const active = t === time;
+                  const taken = bookedSlots.includes(t);
                   return (
-                    <Pressable key={t} testID={`time-${t}`} onPress={() => setTime(t)} style={[styles.timeChip, active && styles.timeChipActive]}>
-                      <Text style={[styles.timeText, active && { color: colors.onBrand }]}>{t}</Text>
+                    <Pressable
+                      key={t}
+                      testID={`time-${t}`}
+                      onPress={() => !taken && setTime(t)}
+                      disabled={taken}
+                      style={[styles.timeChip, active && styles.timeChipActive, taken && styles.timeChipTaken]}
+                    >
+                      <Text style={[styles.timeText, active && { color: colors.onBrand }, taken && styles.timeTextTaken]}>{t}</Text>
+                      {taken && <Text style={styles.takenLabel}>BOOKED</Text>}
                     </Pressable>
                   );
                 })}
               </View>
+              {bookedSlots.length > 0 && bookedSlots.length === TIMES.length && (
+                <Text style={styles.slotWarn}>FULLY BOOKED — TRY ANOTHER DATE</Text>
+              )}
             </View>
             <View>
               <Text style={styles.label}>ESTIMATED HOURS</Text>
@@ -310,10 +350,10 @@ export default function BookScreen() {
               <SummaryRow k="DATE" v={date} />
               <SummaryRow k="TIME" v={time} />
               <SummaryRow k="HOURS" v={`${hours}H`} />
-              <SummaryRow k="RATE" v={`$${artist.rate_per_hour}/HR`} />
+              <SummaryRow k="RATE" v={`${fmtPHP(artist.rate_per_hour)}/HR`} />
               <View style={styles.divider} />
-              <SummaryRow k="EST. TOTAL" v={`$${total}`} big />
-              <SummaryRow k="DEPOSIT DUE NOW" v={`$${deposit}`} accent />
+              <SummaryRow k="EST. TOTAL" v={fmtPHP(total)} big />
+              <SummaryRow k="DEPOSIT DUE NOW" v={fmtPHP(deposit)} accent />
             </View>
             <View style={styles.summary}>
               <Text style={styles.blockTitle}>YOUR NOTES</Text>
@@ -326,7 +366,14 @@ export default function BookScreen() {
             </View>
             <View style={styles.securedRow}>
               <Icon name="lock" size={14} color={colors.muted} />
-              <Text style={styles.securedText}>SECURED BY STRIPE · 100% REFUNDABLE 48H BEFORE APPOINTMENT</Text>
+              <Text style={styles.securedText}>SECURED BY STRIPE · 100% REFUNDABLE 48H BEFORE</Text>
+              <Pressable
+                testID="view-cancellation-policy"
+                onPress={() => router.push("/cancellation-policy")}
+                hitSlop={8}
+              >
+                <Text style={styles.policyLink}>POLICY →</Text>
+              </Pressable>
             </View>
             {!!err && <Text style={styles.err}>{err.toUpperCase()}</Text>}
           </>
@@ -352,7 +399,7 @@ export default function BookScreen() {
             style={({ pressed }) => [styles.bookBtn, busy && { opacity: 0.5 }, pressed && { backgroundColor: colors.brandSecondary }]}
           >
             <Text style={styles.bookText}>
-              {busy ? (uploading ? "UPLOADING..." : "PROCESSING...") : `PAY $${deposit} DEPOSIT`}
+              {busy ? (uploading ? "UPLOADING..." : "PROCESSING...") : `PAY ${fmtPHP(deposit)} DEPOSIT`}
             </Text>
             <Icon name="lock" size={18} color={colors.onBrand} />
           </Pressable>
@@ -381,6 +428,9 @@ const styles = StyleSheet.create({
   progressBar: { height: 4, backgroundColor: colors.surfaceSecondary },
   progressFill: { height: 4, backgroundColor: colors.brand },
   label: { color: colors.brand, fontSize: 11, fontWeight: "900", letterSpacing: 2, marginBottom: spacing.md },
+  labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  slotLoading: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  slotWarn: { color: colors.warning, fontSize: 11, fontWeight: "800", letterSpacing: 1.5, marginTop: spacing.sm },
   dateChip: { width: 64, height: 80, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface, flexShrink: 0 },
   dateChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   dateDay: { color: colors.onSurface, fontSize: 28, fontWeight: "900" },
@@ -388,7 +438,10 @@ const styles = StyleSheet.create({
   timeGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   timeChip: { paddingHorizontal: spacing.lg, height: 44, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
   timeChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  timeChipTaken: { backgroundColor: colors.surfaceSecondary, borderColor: colors.info, opacity: 0.65 },
   timeText: { color: colors.onSurface, fontSize: 13, fontWeight: "900", letterSpacing: 1.5 },
+  timeTextTaken: { color: colors.muted, textDecorationLine: "line-through" },
+  takenLabel: { color: colors.muted, fontSize: 8, fontWeight: "900", letterSpacing: 1.5, marginTop: 2 },
   textarea: { minHeight: 140, borderWidth: 2, borderColor: colors.border, color: colors.onSurface, padding: spacing.md, backgroundColor: colors.surfaceSecondary, textAlignVertical: "top", fontSize: 14, lineHeight: 20 },
   hint: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
   pickBtn: { borderWidth: 2, borderColor: colors.border, borderStyle: "dashed", paddingVertical: spacing.xl, alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary },
@@ -406,6 +459,7 @@ const styles = StyleSheet.create({
   notesText: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20 },
   securedRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.sm },
   securedText: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, flex: 1 },
+  policyLink: { color: colors.brand, fontSize: 11, fontWeight: "900", letterSpacing: 2 },
   err: { color: colors.error, fontSize: 12, fontWeight: "800", letterSpacing: 1.5 },
   stickyBar: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: colors.surface, borderTopWidth: 2, borderTopColor: colors.borderStrong, padding: spacing.md },
   bookBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.brand, paddingHorizontal: spacing.lg, paddingVertical: 16 },

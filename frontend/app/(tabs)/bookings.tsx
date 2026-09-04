@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, Booking } from "../../src/api";
 import { useSession } from "../../src/session";
 import { colors, spacing } from "../../src/theme";
+import { fmtPHP } from "../../src/currency";
 
 export default function BookingsTab() {
   const insets = useSafeAreaInsets();
@@ -118,7 +119,7 @@ export default function BookingsTab() {
                   )}
                   <View style={styles.actionRow}>
                     <View style={styles.depositRow}>
-                      <Text style={styles.deposit}>DEPOSIT ${item.deposit}</Text>
+                      <Text style={styles.deposit}>DEPOSIT {fmtPHP(item.deposit)}</Text>
                       <View style={[
                         styles.payPill,
                         item.payment_status === "paid" ? styles.payPillPaid :

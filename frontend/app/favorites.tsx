@@ -9,6 +9,7 @@ import { api, Artist } from "../src/api";
 import { useSession } from "../src/session";
 import { useFavorites } from "../src/favorites";
 import { colors, spacing } from "../src/theme";
+import { fmtPHP } from "../src/currency";
 
 export default function FavoritesScreen() {
   const insets = useSafeAreaInsets();
@@ -75,7 +76,7 @@ export default function FavoritesScreen() {
                 <View style={styles.cardOverlay}>
                   <View>
                     <Text style={styles.cardName}>{item.name.toUpperCase()}</Text>
-                    <Text style={styles.cardMeta}>{item.city.toUpperCase()} · ${item.rate_per_hour}/HR</Text>
+                    <Text style={styles.cardMeta}>{item.city.toUpperCase()} · {fmtPHP(item.rate_per_hour)}/HR</Text>
                   </View>
                 </View>
               </View>
