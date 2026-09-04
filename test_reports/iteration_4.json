@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 4 validates 3 new features end-to-end: (A) Deposit-refund on cancel, (B) BOOK AGAIN CTA on past/cancelled bookings, (C) Studio Location Map on Artist detail. BACKEND: created /app/backend/tests/test_iteration_4_refund_and_map.py — 9/9 PASSED. (1) refund-when-paid-and->48h-out: mock-paid a 5-day-out booking, cancel → status='cancelled' AND payment_status='refunded' (verified via GET listing persistence). (2) no-refund-when-paid-within-48h: mock-paid a tomorrow booking, cancel → status='cancelled' AND payment_status stays 'paid'. (3) cancel-unpaid: unpaid booking cancel → status='cancelled', payment_status stays 'unpaid'. (4) artist-location backfill: all 6 seeded artists return non-zero lat/lon and non-empty address; Black Iron Tattoo == 40.7181, -73.9598 / Bedford Ave. (5) featured + artist-detail regression pass. Full regression sequentially: 43/43 tests PASS (backend_test.py 16, test_new_features.py 18, iteration_4 9). Note: running the pre-existing test_new_features.py with pytest-xdist parallel yields 6 failures because TestBookingPayment shares booking_id via class attr across workers — pre-existing infra issue, not a regression; sequential run is 100%. FRONTEND (390x844, demo user): Artist detail Kai Nakamura renders the brutalist map card testID='artist-map' with visible grid, red 44x44 pin, pulse ring, coords pill '40.7181°, -73.9598°', address '246 Bedford Ave, Brooklyn, NY 11249', red 'TAP TO OPEN IN MAPS' hint, and navigation CTA — beautiful and consistent with the brutalist aesthetic. Map Pressable is wired to Linking.openURL (Apple Maps on iOS, Google Maps on Android/web). Bookings tab Past view shows 24 entries with BOOK AGAIN buttons (testID='book-again-<id>') including one PAID (past completed), one REFUNDED, several CANCELLED — REFUNDED pill visible in DOM. Tapping BOOK AGAIN navigates to /book/{artist_id} and lands on Step 1 of 3 (SELECT DATE & TIME) correctly. Upcoming tab shows TOMORROW — GET READY reminder banner + 5-days-away booking without banner (from iter3, still working).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "N/A (test infra)", "issue": "test_new_features.py TestStripeMock fails when run under pytest-xdist because TestBookingPayment._booking_id is set on one worker and read on another (LoadScopeScheduling splits classes). Sequential run passes 18/18. Pre-existing — not caused by iteration 4. Fix: move booking creation into a session fixture or into TestStripeMock.setup_class."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_4_refund_and_map.py",
+    "/app/test_reports/pytest/iteration_4.xml",
+    "/app/test_reports/pytest/iteration_4_full.xml"
+  ],
+  "action_items": [
+    "Optional: refactor test_new_features.py TestStripeMock to avoid cross-class shared state so it works under pytest-xdist (use session fixture returning booking_id+session_id).",
+    "Optional: on native (Expo Go / iOS build) manually confirm Linking.openURL opens Apple/Google Maps from the map card — cannot be exercised inside headless web Playwright.",
+    "Optional (code hygiene): server.py refund path relies on `stripe.api_key not in ('sk_test_emergent', '')` string sentinel — consider a dedicated IS_MOCK_STRIPE flag for clarity."
+  ],
+  "critical_code_review_comments": [
+    "server.py cancel_booking: hours_until parsing assumes time_slot is exactly 'HH:MM' and treats the session as UTC. If the app ever stores localized time slots, refund threshold could be off by up to a day. Consider storing session_dt as UTC ISO at booking time and using it directly.",
+    "server.py cancel_booking sets updates['_refunded'] then returns b; the pydantic response_model=Booking silently drops unknown keys — fine, but no client-visible signal that a refund occurred. Consider returning {'refunded': bool, 'reason': str} alongside the booking for a better UX on the cancel confirmation.",
+    "server.py STUDIO_LOCATIONS is keyed by studio *name* — if two artists ever share a studio name they get the same coords (currently fine). Backfill loop in seed_data runs on every startup and is O(N) per artist; harmless at 6 artists but note for scale.",
+    "artist/[id].tsx map card: uses `${(i+1)*14}%` / `${(i+1)*11}%` string percent positions which is fine on web but React Native StyleSheet historically accepts DimensionValue strings — verified rendering on web preview; on native the values are accepted since RN 0.72+.",
+    "artist/[id].tsx map Pressable: no accessibility label; add accessibilityLabel='Open studio location in Maps' for VoiceOver/TalkBack.",
+    "bookings.tsx: BOOK AGAIN branch is triggered when item.status==='cancelled' OR item.date<today — this correctly covers cancelled-in-future bookings shown in Past tab. The filter on tab==='past' matches the same predicate, so buttons stay in sync with the tab (verified)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_4_refund_and_map.py (new)"
+  ],
+  "success_rate": {"backend": "100% (43/43 sequential)", "frontend": "100% for the 3 new features (map, book-again, refunded pill)"},
+  "seed_data_creation": "Created (via backend tests) three additional TEST_ bookings for demo user: a 5-day-out refunded/cancelled, a tomorrow paid/cancelled (within-48h no-refund), and a 10-day-out unpaid/cancelled. Reused iteration-3 seed of a 'tomorrow' upcoming reminder booking.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New testIDs in this iteration: artist-map (Pressable on artist detail), book-again-<booking_id> (Bookings Past tab). Backend refund threshold is 48h in UTC computed from `{date}T{time_slot}:00+00:00`. Mock refund path is triggered when payment_intent_id starts with 'pi_mock_' OR checkout_session_id starts with 'mock_'. Stripe placeholder key still 'sk_test_emergent'. STUDIO_LOCATIONS map holds coords for the 6 seeded studios (Black Iron Tattoo, Needle & Ink, Cuervo Tattoo, Shinjuku Ink Lab, Cold Steel Studio, Sailor's Rest). Signin uses testIDs signin-email-input / signin-password-input / signin-submit-button (NOT email-input/password-input). Bookings tab is reachable via URL /bookings after auth.",
+  "rca_of_issue": "N/A — no bugs found. All new features working."
+}

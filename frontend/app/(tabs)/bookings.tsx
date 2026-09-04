@@ -119,18 +119,42 @@ export default function BookingsTab() {
                   <View style={styles.actionRow}>
                     <View style={styles.depositRow}>
                       <Text style={styles.deposit}>DEPOSIT ${item.deposit}</Text>
-                      <View style={[styles.payPill, item.payment_status === "paid" ? styles.payPillPaid : styles.payPillUnpaid]}>
-                        <Icon name={item.payment_status === "paid" ? "check" : "clock"} size={10} color={item.payment_status === "paid" ? colors.onSuccess : colors.warning} />
-                        <Text style={[styles.payPillText, { color: item.payment_status === "paid" ? colors.onSuccess : colors.warning }]}>
+                      <View style={[
+                        styles.payPill,
+                        item.payment_status === "paid" ? styles.payPillPaid :
+                        item.payment_status === "refunded" ? styles.payPillRefunded :
+                        styles.payPillUnpaid,
+                      ]}>
+                        <Icon
+                          name={item.payment_status === "paid" ? "check" : item.payment_status === "refunded" ? "rotate-ccw" : "clock"}
+                          size={10}
+                          color={item.payment_status === "paid" ? colors.onSuccess : item.payment_status === "refunded" ? colors.info : colors.warning}
+                        />
+                        <Text style={[styles.payPillText, {
+                          color: item.payment_status === "paid" ? colors.onSuccess :
+                                 item.payment_status === "refunded" ? colors.info :
+                                 colors.warning,
+                        }]}>
                           {(item.payment_status || "unpaid").toUpperCase()}
                         </Text>
                       </View>
                     </View>
-                    {item.status !== "cancelled" && item.date >= today && (
-                      <Pressable testID={`cancel-booking-${item.id}`} onPress={() => cancel(item.id)} style={styles.cancelBtn}>
-                        <Text style={styles.cancelText}>CANCEL</Text>
-                      </Pressable>
-                    )}
+                    <View style={styles.rowActions}>
+                      {item.status === "cancelled" || item.date < today ? (
+                        <Pressable
+                          testID={`book-again-${item.id}`}
+                          onPress={() => router.push(`/book/${item.artist_id}`)}
+                          style={styles.bookAgainBtn}
+                        >
+                          <Icon name="rotate-cw" size={11} color={colors.onBrand} />
+                          <Text style={styles.bookAgainText}>BOOK AGAIN</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable testID={`cancel-booking-${item.id}`} onPress={() => cancel(item.id)} style={styles.cancelBtn}>
+                          <Text style={styles.cancelText}>CANCEL</Text>
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
                 </View>
                 </View>
@@ -179,8 +203,12 @@ const styles = StyleSheet.create({
   payPill: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 3 },
   payPillPaid: { borderColor: colors.success, backgroundColor: "rgba(0,138,46,0.15)" },
   payPillUnpaid: { borderColor: colors.warning },
+  payPillRefunded: { borderColor: colors.info, backgroundColor: colors.surfaceSecondary },
   payPillText: { fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
   refThumb: { aspectRatio: 16 / 9, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs },
+  rowActions: { flexDirection: "row", gap: spacing.sm },
   cancelBtn: { borderWidth: 1, borderColor: colors.muted, paddingHorizontal: spacing.md, paddingVertical: 6 },
   cancelText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
+  bookAgainBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.brand, borderWidth: 1, borderColor: colors.brand, paddingHorizontal: spacing.md, paddingVertical: 6 },
+  bookAgainText: { color: colors.onBrand, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
 });

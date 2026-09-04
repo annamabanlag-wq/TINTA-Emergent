@@ -84,6 +84,9 @@ class Artist(BaseModel):
     handle: str
     city: str
     studio: str
+    address: str = ""
+    lat: float = 0.0
+    lon: float = 0.0
     styles: List[str]
     bio: str
     rate_per_hour: int
@@ -300,8 +303,41 @@ async def cancel_booking(booking_id: str, user=Depends(current_user)):
     b = await db.bookings.find_one({"id": booking_id, "user_id": user["id"]}, {"_id": 0})
     if not b:
         raise HTTPException(404, "Booking not found")
-    await db.bookings.update_one({"id": booking_id}, {"$set": {"status": "cancelled"}})
-    b["status"] = "cancelled"
+
+    updates: dict = {"status": "cancelled"}
+    refunded = False
+    refund_reason = None
+
+    # Compute hours until session
+    try:
+        session_dt = datetime.fromisoformat(f"{b['date']}T{b['time_slot']}:00+00:00")
+        hours_until = (session_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+    except Exception:
+        hours_until = -1
+
+    if b.get("payment_status") == "paid" and hours_until >= 48:
+        # Attempt refund
+        pi_id = b.get("payment_intent_id") or ""
+        if pi_id.startswith("pi_mock_") or (b.get("checkout_session_id") or "").startswith("mock_"):
+            # Mock refund
+            updates["payment_status"] = "refunded"
+            updates["refunded_at"] = now_iso()
+            refunded = True
+        elif pi_id and stripe.api_key and stripe.api_key not in ("sk_test_emergent", ""):
+            try:
+                await run_in_threadpool(lambda: stripe.Refund.create(payment_intent=pi_id))
+                updates["payment_status"] = "refunded"
+                updates["refunded_at"] = now_iso()
+                refunded = True
+            except stripe.error.StripeError as e:
+                logger.exception("Refund failed: %s", e)
+                refund_reason = "refund_failed"
+    elif b.get("payment_status") == "paid":
+        refund_reason = "within_48h"
+
+    await db.bookings.update_one({"id": booking_id}, {"$set": updates})
+    b.update(updates)
+    b["_refunded"] = refunded  # not part of response model, ignored
     return b
 
 
@@ -820,20 +856,37 @@ SEED_ARTISTS = [
 ]
 
 
+STUDIO_LOCATIONS = {
+    "Black Iron Tattoo": {"address": "246 Bedford Ave, Brooklyn, NY 11249", "lat": 40.7181, "lon": -73.9598},
+    "Needle & Ink": {"address": "Torstraße 88, 10119 Berlin", "lat": 52.5297, "lon": 13.4033},
+    "Cuervo Tattoo": {"address": "Av. Álvaro Obregón 100, Roma Norte, Mexico City", "lat": 19.4148, "lon": -99.1618},
+    "Shinjuku Ink Lab": {"address": "3-15-1 Shinjuku, Shinjuku-ku, Tokyo 160-0022", "lat": 35.6919, "lon": 139.7038},
+    "Cold Steel Studio": {"address": "42 Brick Lane, London E1 6RF", "lat": 51.5203, "lon": -0.0716},
+    "Sailor's Rest": {"address": "1801 N Highland Ave, Los Angeles, CA 90028", "lat": 34.1017, "lon": -118.3388},
+}
+
+
 @app.on_event("startup")
 async def seed_data():
     count = await db.artists.count_documents({})
     if count == 0:
         docs = []
         for a in SEED_ARTISTS:
+            loc = STUDIO_LOCATIONS.get(a["studio"], {"address": "", "lat": 0.0, "lon": 0.0})
             docs.append({
                 "id": str(uuid.uuid4()),
                 "rating": round(4.5 + (0.5 * (hash(a["name"]) % 5) / 10), 1),
                 "reviews_count": 20 + (hash(a["name"]) % 40),
                 **a,
+                **loc,
             })
         await db.artists.insert_many(docs)
         logger.info(f"Seeded {len(docs)} artists")
+    else:
+        # Backfill missing location fields for existing artists
+        async for artist in db.artists.find({"$or": [{"lat": {"$exists": False}}, {"address": {"$exists": False}}]}, {"_id": 0, "id": 1, "studio": 1}):
+            loc = STUDIO_LOCATIONS.get(artist.get("studio", ""), {"address": "", "lat": 0.0, "lon": 0.0})
+            await db.artists.update_one({"id": artist["id"]}, {"$set": loc})
 
 
 app.include_router(api_router)

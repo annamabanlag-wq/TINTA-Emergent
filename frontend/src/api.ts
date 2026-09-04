@@ -24,6 +24,9 @@ export type Artist = {
   handle: string;
   city: string;
   studio: string;
+  address?: string;
+  lat?: number;
+  lon?: number;
   styles: string[];
   bio: string;
   rate_per_hour: number;

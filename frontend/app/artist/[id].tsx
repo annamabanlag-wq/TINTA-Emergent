@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Modal, Share, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Modal, Share, Platform, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -129,6 +129,53 @@ export default function ArtistDetail() {
           <Icon name="map-pin" size={14} color={colors.brand} />
           <Text style={styles.studioText}>{artist.studio.toUpperCase()} · {artist.city.toUpperCase()}</Text>
         </View>
+
+        {/* Map */}
+        {artist.lat && artist.lon ? (
+          <View style={styles.mapBlock}>
+            <Pressable
+              testID="artist-map"
+              onPress={() => {
+                const lat = artist.lat, lon = artist.lon;
+                const label = encodeURIComponent(artist.studio);
+                const url = Platform.OS === "ios"
+                  ? `http://maps.apple.com/?ll=${lat},${lon}&q=${label}`
+                  : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+                Linking.openURL(url).catch(() => {});
+              }}
+              style={styles.mapCard}
+            >
+              {/* Stylized brutalist map — grid + pin */}
+              <View style={styles.mapGrid}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <View key={`h${i}`} style={[styles.gridLineH, { top: `${(i + 1) * 14}%` }]} />
+                ))}
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <View key={`v${i}`} style={[styles.gridLineV, { left: `${(i + 1) * 11}%` }]} />
+                ))}
+              </View>
+              <View style={styles.mapPinBig}>
+                <Icon name="map-pin" size={20} color={colors.onBrand} />
+              </View>
+              <View style={styles.mapPulse} />
+              <LinearGradient colors={["transparent", "rgba(10,10,10,0.9)"]} style={StyleSheet.absoluteFill} />
+              <View style={styles.mapCoords}>
+                <Text style={styles.mapCoordsText}>
+                  {artist.lat.toFixed(4)}°, {artist.lon.toFixed(4)}°
+                </Text>
+              </View>
+              <View style={styles.mapFooter}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mapAddress}>{artist.address || `${artist.city}`}</Text>
+                  <Text style={styles.mapHint}>TAP TO OPEN IN MAPS</Text>
+                </View>
+                <View style={styles.mapCta}>
+                  <Icon name="navigation" size={16} color={colors.onBrand} />
+                </View>
+              </View>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Bio */}
         <View style={styles.block}>
@@ -273,6 +320,19 @@ const styles = StyleSheet.create({
   metaLabel: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 2, marginTop: 2 },
   studioRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
   studioText: { color: colors.onSurface, fontSize: 12, fontWeight: "800", letterSpacing: 1.5 },
+  mapBlock: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  mapCard: { aspectRatio: 16 / 9, backgroundColor: colors.surfaceSecondary, borderWidth: 2, borderColor: colors.borderStrong, overflow: "hidden" },
+  mapGrid: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.surfaceSecondary },
+  gridLineH: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: colors.border },
+  gridLineV: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: colors.border },
+  mapPinBig: { position: "absolute", top: "38%", left: "50%", marginLeft: -22, marginTop: -22, width: 44, height: 44, backgroundColor: colors.brand, borderWidth: 3, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", zIndex: 2 },
+  mapPulse: { position: "absolute", top: "38%", left: "50%", marginLeft: -40, marginTop: -40, width: 80, height: 80, borderWidth: 2, borderColor: colors.brand, opacity: 0.35, borderRadius: 0 },
+  mapCoords: { position: "absolute", top: spacing.sm, right: spacing.sm, backgroundColor: "rgba(10,10,10,0.7)", borderWidth: 1, borderColor: colors.borderStrong, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  mapCoordsText: { color: colors.onSurface, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  mapFooter: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", alignItems: "center", padding: spacing.md, gap: spacing.sm },
+  mapAddress: { color: colors.onSurface, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  mapHint: { color: colors.brand, fontSize: 10, fontWeight: "800", letterSpacing: 2, marginTop: 2 },
+  mapCta: { width: 40, height: 40, backgroundColor: colors.brand, borderWidth: 2, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center" },
   block: { padding: spacing.lg, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
   blockTitle: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 3 },
   bio: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 22 },
