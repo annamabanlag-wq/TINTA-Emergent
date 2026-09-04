@@ -6,6 +6,7 @@ import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, Booking } from "../../src/api";
 import { useSession } from "../../src/session";
+import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
 import { fmtPHP } from "../../src/currency";
 
@@ -13,6 +14,7 @@ export default function BookingsTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { token } = useSession();
+  const { t } = useI18n();
   const [items, setItems] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,13 +48,13 @@ export default function BookingsTab() {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Text style={styles.title}>BOOKINGS</Text>
+        <Text style={styles.title}>{t("tab.bookings")}</Text>
         <View style={styles.segRow}>
           <Pressable testID="bookings-tab-upcoming" onPress={() => setTab("upcoming")} style={[styles.segBtn, tab === "upcoming" && styles.segActive]}>
-            <Text style={[styles.segText, tab === "upcoming" && styles.segTextActive]}>UPCOMING</Text>
+            <Text style={[styles.segText, tab === "upcoming" && styles.segTextActive]}>{t("bookings.upcoming")}</Text>
           </Pressable>
           <Pressable testID="bookings-tab-past" onPress={() => setTab("past")} style={[styles.segBtn, tab === "past" && styles.segActive]}>
-            <Text style={[styles.segText, tab === "past" && styles.segTextActive]}>PAST</Text>
+            <Text style={[styles.segText, tab === "past" && styles.segTextActive]}>{t("bookings.past")}</Text>
           </Pressable>
         </View>
       </View>
@@ -61,10 +63,10 @@ export default function BookingsTab() {
         <View style={styles.center}><ActivityIndicator color={colors.brand} size="large" /></View>
       ) : filtered.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyBig}>NO{"\n"}{tab === "upcoming" ? "UPCOMING" : "PAST"}{"\n"}SESSIONS</Text>
+          <Text style={styles.emptyBig}>{tab === "upcoming" ? t("bookings.empty.upcoming") : t("bookings.empty.past")}</Text>
           {tab === "upcoming" && (
             <Pressable testID="explore-artists-cta" onPress={() => router.push("/(tabs)")} style={styles.cta}>
-              <Text style={styles.ctaText}>EXPLORE ARTISTS</Text>
+              <Text style={styles.ctaText}>{t("bookings.explore")}</Text>
             </Pressable>
           )}
         </View>
@@ -79,13 +81,13 @@ export default function BookingsTab() {
             const today0 = new Date(); today0.setHours(0,0,0,0);
             const daysAway = Math.round((d.getTime() - today0.getTime()) / 86400000);
             const upcomingSoon = item.status !== "cancelled" && daysAway >= 0 && daysAway <= 3;
-            const reminderText = daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `${daysAway} DAYS AWAY`;
+            const reminderText = daysAway === 0 ? t("bookings.today") : daysAway === 1 ? t("bookings.tomorrow") : `${daysAway} ${t("bookings.daysAway")}`;
             return (
               <View style={styles.row} testID={`booking-row-${item.id}`}>
                 {upcomingSoon && (
                   <View style={styles.reminderBanner} testID={`reminder-${item.id}`}>
                     <Icon name="bell" size={11} color={colors.onBrand} />
-                    <Text style={styles.reminderText}>{reminderText} — GET READY</Text>
+                    <Text style={styles.reminderText}>{reminderText} — {t("bookings.getReady")}</Text>
                   </View>
                 )}
                 <View style={styles.rowInner}>
@@ -148,11 +150,11 @@ export default function BookingsTab() {
                           style={styles.bookAgainBtn}
                         >
                           <Icon name="rotate-cw" size={11} color={colors.onBrand} />
-                          <Text style={styles.bookAgainText}>BOOK AGAIN</Text>
+                          <Text style={styles.bookAgainText}>{t("bookings.bookAgain")}</Text>
                         </Pressable>
                       ) : (
                         <Pressable testID={`cancel-booking-${item.id}`} onPress={() => cancel(item.id)} style={styles.cancelBtn}>
-                          <Text style={styles.cancelText}>CANCEL</Text>
+                          <Text style={styles.cancelText}>{t("bookings.cancel")}</Text>
                         </Pressable>
                       )}
                     </View>

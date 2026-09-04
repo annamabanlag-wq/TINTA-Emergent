@@ -122,7 +122,7 @@ class TestBookings:
         assert r.status_code == 200, r.text
         b = r.json()
         assert b["status"] == "confirmed"
-        assert b["deposit"] == 50
+        assert b["deposit"] == 2900
         assert b["artist_id"] == aid
         TestBookings.booking_id = b["id"]
 

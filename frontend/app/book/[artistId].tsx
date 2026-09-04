@@ -9,6 +9,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { api, Artist, uploadImage, CheckoutSessionOut, VerifyOut } from "../../src/api";
 import { useSession } from "../../src/session";
+import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
 import { fmtPHP } from "../../src/currency";
 
@@ -31,6 +32,7 @@ export default function BookScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { token } = useSession();
+  const { t } = useI18n();
   const [artist, setArtist] = useState<Artist | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [date, setDate] = useState<string>("");
@@ -46,6 +48,7 @@ export default function BookScreen() {
   const [paid, setPaid] = useState(false);
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "gcash" | "maya">("card");
 
   useEffect(() => {
     (async () => {
@@ -138,7 +141,7 @@ export default function BookScreen() {
       const platform = Platform.OS === "web" ? "web" : "native";
       const session = await api<CheckoutSessionOut>("/payments/checkout-session", {
         method: "POST",
-        body: JSON.stringify({ booking_id: booking.id, platform }),
+        body: JSON.stringify({ booking_id: booking.id, platform, payment_method: paymentMethod }),
       }, token);
 
       // 4. Handle checkout
@@ -209,16 +212,16 @@ export default function BookScreen() {
       <View style={[styles.root, { paddingTop: insets.top + spacing.xl, paddingBottom: insets.bottom + spacing.xl }]}>
         <View style={styles.doneWrap}>
           <View style={styles.checkBox}><Icon name="check" size={48} color={colors.onBrand} /></View>
-          <Text style={styles.doneTitle}>BOOKING{"\n"}CONFIRMED</Text>
+          <Text style={styles.doneTitle}>{t("book.confirmed")}</Text>
           <Text style={styles.doneMeta}>{artist.name.toUpperCase()} · {date} @ {time}</Text>
           <Text style={styles.doneNote}>
-            {paid ? `DEPOSIT ${fmtPHP(deposit)} PAID` : `DEPOSIT ${fmtPHP(deposit)} PENDING`} · TOTAL ~{fmtPHP(total)}
+            {paid ? `${t("book.deposit")} ${fmtPHP(deposit)} ${t("book.paid")}` : `${t("book.deposit")} ${fmtPHP(deposit)} ${t("book.pending")}`} · {t("book.total")} ~{fmtPHP(total)}
           </Text>
           <Pressable testID="done-view-bookings" onPress={() => router.replace("/(tabs)/bookings")} style={styles.doneCta}>
-            <Text style={styles.doneCtaText}>VIEW MY BOOKINGS</Text>
+            <Text style={styles.doneCtaText}>{t("book.viewBookings")}</Text>
           </Pressable>
           <Pressable testID="done-close" onPress={() => router.replace("/(tabs)")} style={[styles.doneCta, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}>
-            <Text style={[styles.doneCtaText, { color: colors.onSurface }]}>BACK TO DISCOVER</Text>
+            <Text style={[styles.doneCtaText, { color: colors.onSurface }]}>{t("book.backDiscover")}</Text>
           </Pressable>
         </View>
       </View>
@@ -232,8 +235,8 @@ export default function BookScreen() {
           <Icon name="arrow-left" size={20} color={colors.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.stepLabel}>STEP {step} OF 3</Text>
-          <Text style={styles.stepTitle}>{step === 1 ? "SELECT DATE & TIME" : step === 2 ? "DESCRIBE PIECE" : "REVIEW & PAY"}</Text>
+          <Text style={styles.stepLabel}>{t("book.step")} {step} {t("book.of")} 3</Text>
+          <Text style={styles.stepTitle}>{step === 1 ? t("book.step1") : step === 2 ? t("book.step2") : t("book.step3")}</Text>
         </View>
       </View>
 
@@ -246,7 +249,7 @@ export default function BookScreen() {
         {step === 1 && (
           <>
             <View>
-              <Text style={styles.label}>DATE</Text>
+              <Text style={styles.label}>{t("book.date")}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}>
                 {nextDates().map((d) => {
                   const dt = new Date(d + "T00:00:00");
@@ -267,33 +270,33 @@ export default function BookScreen() {
             </View>
             <View>
               <View style={styles.labelRow}>
-                <Text style={styles.label}>TIME</Text>
-                {loadingSlots ? <Text style={styles.slotLoading}>CHECKING AVAILABILITY...</Text> : null}
+                <Text style={styles.label}>{t("book.time")}</Text>
+                {loadingSlots ? <Text style={styles.slotLoading}>{t("book.checking")}</Text> : null}
               </View>
               <View style={styles.timeGrid}>
-                {TIMES.map((t) => {
-                  const active = t === time;
-                  const taken = bookedSlots.includes(t);
+                {TIMES.map((slot) => {
+                  const active = slot === time;
+                  const taken = bookedSlots.includes(slot);
                   return (
                     <Pressable
-                      key={t}
-                      testID={`time-${t}`}
-                      onPress={() => !taken && setTime(t)}
+                      key={slot}
+                      testID={`time-${slot}`}
+                      onPress={() => !taken && setTime(slot)}
                       disabled={taken}
                       style={[styles.timeChip, active && styles.timeChipActive, taken && styles.timeChipTaken]}
                     >
-                      <Text style={[styles.timeText, active && { color: colors.onBrand }, taken && styles.timeTextTaken]}>{t}</Text>
-                      {taken && <Text style={styles.takenLabel}>BOOKED</Text>}
+                      <Text style={[styles.timeText, active && { color: colors.onBrand }, taken && styles.timeTextTaken]}>{slot}</Text>
+                      {taken && <Text style={styles.takenLabel}>{t("book.booked")}</Text>}
                     </Pressable>
                   );
                 })}
               </View>
               {bookedSlots.length > 0 && bookedSlots.length === TIMES.length && (
-                <Text style={styles.slotWarn}>FULLY BOOKED — TRY ANOTHER DATE</Text>
+                <Text style={styles.slotWarn}>{t("book.fullyBooked")}</Text>
               )}
             </View>
             <View>
-              <Text style={styles.label}>ESTIMATED HOURS</Text>
+              <Text style={styles.label}>{t("book.hours")}</Text>
               <View style={styles.timeGrid}>
                 {HOURS.map((h) => {
                   const active = h === hours;
@@ -310,20 +313,20 @@ export default function BookScreen() {
 
         {step === 2 && (
           <>
-            <Text style={styles.label}>DESCRIBE YOUR TATTOO</Text>
+            <Text style={styles.label}>{t("book.describe")}</Text>
             <TextInput
               testID="book-description-input"
               value={desc}
               onChangeText={setDesc}
               multiline
-              placeholder="SIZE, PLACEMENT, STYLE, INSPIRATION..."
+              placeholder={t("book.describe.placeholder")}
               placeholderTextColor={colors.muted}
               style={styles.textarea}
             />
-            <Text style={styles.hint}>MIN 6 CHARACTERS. THE ARTIST WILL FOLLOW UP TO CONFIRM DETAILS.</Text>
+            <Text style={styles.hint}>{t("book.describe.hint")}</Text>
 
             <View style={{ marginTop: spacing.md }}>
-              <Text style={styles.label}>REFERENCE IMAGE (OPTIONAL)</Text>
+              <Text style={styles.label}>{t("book.reference")}</Text>
               {refUri ? (
                 <View style={styles.refWrap}>
                   <Image source={refUri} style={StyleSheet.absoluteFill} contentFit="cover" />
@@ -334,8 +337,8 @@ export default function BookScreen() {
               ) : (
                 <Pressable testID="pick-ref-image" onPress={pickImage} style={styles.pickBtn}>
                   <Icon name="image" size={24} color={colors.brand} />
-                  <Text style={styles.pickText}>ADD INSPIRATION PHOTO</Text>
-                  <Text style={styles.pickSub}>SO THE ARTIST CAN PREP THE DESIGN</Text>
+                  <Text style={styles.pickText}>{t("book.reference.cta")}</Text>
+                  <Text style={styles.pickSub}>{t("book.reference.hint")}</Text>
                 </Pressable>
               )}
             </View>
@@ -345,18 +348,18 @@ export default function BookScreen() {
         {step === 3 && (
           <>
             <View style={styles.summary}>
-              <Text style={styles.blockTitle}>SUMMARY</Text>
-              <SummaryRow k="ARTIST" v={artist.name} />
-              <SummaryRow k="DATE" v={date} />
-              <SummaryRow k="TIME" v={time} />
-              <SummaryRow k="HOURS" v={`${hours}H`} />
-              <SummaryRow k="RATE" v={`${fmtPHP(artist.rate_per_hour)}/HR`} />
+              <Text style={styles.blockTitle}>{t("book.summary")}</Text>
+              <SummaryRow k={t("book.artist")} v={artist.name} />
+              <SummaryRow k={t("book.date")} v={date} />
+              <SummaryRow k={t("book.time")} v={time} />
+              <SummaryRow k={t("book.hours")} v={`${hours}H`} />
+              <SummaryRow k={t("book.rate")} v={`${fmtPHP(artist.rate_per_hour)}/HR`} />
               <View style={styles.divider} />
-              <SummaryRow k="EST. TOTAL" v={fmtPHP(total)} big />
-              <SummaryRow k="DEPOSIT DUE NOW" v={fmtPHP(deposit)} accent />
+              <SummaryRow k={t("book.total")} v={fmtPHP(total)} big />
+              <SummaryRow k={t("book.depositDue")} v={fmtPHP(deposit)} accent />
             </View>
             <View style={styles.summary}>
-              <Text style={styles.blockTitle}>YOUR NOTES</Text>
+              <Text style={styles.blockTitle}>{t("book.notes")}</Text>
               <Text style={styles.notesText}>{desc}</Text>
               {refUri && (
                 <View style={styles.refPreview}>
@@ -364,15 +367,41 @@ export default function BookScreen() {
                 </View>
               )}
             </View>
+            <View style={styles.summary}>
+              <Text style={styles.blockTitle}>{t("book.paymentMethod")}</Text>
+              <View style={styles.methodRow}>
+                {([
+                  { id: "card", label: "CARD", icon: "credit-card", brand: null },
+                  { id: "gcash", label: "GCASH", icon: "smartphone", brand: "#0066FF" },
+                  { id: "maya", label: "MAYA", icon: "smartphone", brand: "#01D775" },
+                ] as const).map((m) => {
+                  const active = paymentMethod === m.id;
+                  return (
+                    <Pressable
+                      key={m.id}
+                      testID={`payment-method-${m.id}`}
+                      onPress={() => setPaymentMethod(m.id)}
+                      style={[styles.methodBtn, active && styles.methodBtnActive]}
+                    >
+                      <View style={[styles.methodDot, m.brand ? { backgroundColor: m.brand } : { backgroundColor: colors.onSurface }]}>
+                        <Icon name={m.icon} size={12} color={m.brand ? "#FFFFFF" : colors.surface} />
+                      </View>
+                      <Text style={[styles.methodText, active && styles.methodTextActive]}>{m.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
             <View style={styles.securedRow}>
               <Icon name="lock" size={14} color={colors.muted} />
-              <Text style={styles.securedText}>SECURED BY STRIPE · 100% REFUNDABLE 48H BEFORE</Text>
+              <Text style={styles.securedText}>{t("book.secured")}</Text>
               <Pressable
                 testID="view-cancellation-policy"
                 onPress={() => router.push("/cancellation-policy")}
                 hitSlop={8}
               >
-                <Text style={styles.policyLink}>POLICY →</Text>
+                <Text style={styles.policyLink}>{t("book.policy")}</Text>
               </Pressable>
             </View>
             {!!err && <Text style={styles.err}>{err.toUpperCase()}</Text>}
@@ -388,7 +417,7 @@ export default function BookScreen() {
             disabled={step === 1 ? !canStep1 : !canStep2}
             style={({ pressed }) => [styles.bookBtn, ((step === 1 && !canStep1) || (step === 2 && !canStep2)) && { opacity: 0.5 }, pressed && { backgroundColor: colors.brandSecondary }]}
           >
-            <Text style={styles.bookText}>CONTINUE</Text>
+            <Text style={styles.bookText}>{t("book.continue")}</Text>
             <Icon name="arrow-right" size={20} color={colors.onBrand} />
           </Pressable>
         ) : (
@@ -399,7 +428,7 @@ export default function BookScreen() {
             style={({ pressed }) => [styles.bookBtn, busy && { opacity: 0.5 }, pressed && { backgroundColor: colors.brandSecondary }]}
           >
             <Text style={styles.bookText}>
-              {busy ? (uploading ? "UPLOADING..." : "PROCESSING...") : `PAY ${fmtPHP(deposit)} DEPOSIT`}
+              {busy ? (uploading ? t("book.uploading") : t("book.processing")) : `${t("book.pay")} ${fmtPHP(deposit)} ${t("book.deposit")}`}
             </Text>
             <Icon name="lock" size={18} color={colors.onBrand} />
           </Pressable>
@@ -461,6 +490,12 @@ const styles = StyleSheet.create({
   securedText: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, flex: 1 },
   policyLink: { color: colors.brand, fontSize: 11, fontWeight: "900", letterSpacing: 2 },
   err: { color: colors.error, fontSize: 12, fontWeight: "800", letterSpacing: 1.5 },
+  methodRow: { flexDirection: "row", gap: spacing.sm },
+  methodBtn: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.xs, paddingVertical: spacing.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
+  methodBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  methodDot: { width: 28, height: 28, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.borderStrong },
+  methodText: { color: colors.onSurface, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
+  methodTextActive: { color: colors.onBrand },
   stickyBar: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: colors.surface, borderTopWidth: 2, borderTopColor: colors.borderStrong, padding: spacing.md },
   bookBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.brand, paddingHorizontal: spacing.lg, paddingVertical: 16 },
   bookText: { color: colors.onBrand, fontSize: 16, fontWeight: "900", letterSpacing: 2 },

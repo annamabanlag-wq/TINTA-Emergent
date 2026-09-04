@@ -2,10 +2,12 @@ import { Tabs, Redirect } from "expo-router";
 import { Platform } from "react-native";
 import Icon from "@react-native-vector-icons/feather";
 import { useSession } from "../../src/session";
+import { useI18n } from "../../src/i18n";
 import { colors } from "../../src/theme";
 
 export default function TabsLayout() {
   const { user, loading } = useSession();
+  const { t } = useI18n();
   if (loading) return null;
   if (!user) return <Redirect href="/(auth)/sign-in" />;
 
@@ -29,28 +31,28 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "DISCOVER",
+          title: t("tab.discover"),
           tabBarIcon: ({ color, size }) => <Icon name="search" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="bookings"
         options={{
-          title: "BOOKINGS",
+          title: t("tab.bookings"),
           tabBarIcon: ({ color, size }) => <Icon name="calendar" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
-          title: "MESSAGES",
+          title: t("tab.messages"),
           tabBarIcon: ({ color, size }) => <Icon name="message-square" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "PROFILE",
+          title: t("tab.profile"),
           tabBarIcon: ({ color, size }) => <Icon name="user" size={size} color={color} />,
         }}
       />

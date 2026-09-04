@@ -122,6 +122,7 @@ class Booking(BaseModel):
     deposit: int
     status: str  # confirmed | completed | cancelled
     payment_status: str = "unpaid"  # unpaid | paid | refunded
+    payment_method: Optional[str] = None
     checkout_session_id: Optional[str] = None
     payment_intent_id: Optional[str] = None
     created_at: str
@@ -575,6 +576,15 @@ async def serve_file(path: str, token: Optional[str] = None, authorization: Opti
 class CheckoutIn(BaseModel):
     booking_id: str
     platform: str = "native"  # "native" | "web"
+    payment_method: str = "card"  # "card" | "gcash" | "maya"
+
+
+STRIPE_METHOD_MAP = {
+    "card": ["card"],
+    "gcash": ["gcash"],
+    # Maya not natively supported by Stripe — falls back to card + mock label
+    "maya": ["card"],
+}
 
 
 @api_router.post("/payments/checkout-session")
@@ -588,22 +598,25 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
     # If Stripe not configured with a real key, use a mock checkout page
     is_placeholder = (not stripe.api_key) or stripe.api_key in ("sk_test_emergent", "")
     frontend_base = os.environ.get("BACKEND_PUBLIC_URL") or "https://tattoo-reserve-7.preview.emergentagent.com"
+    method = (body.payment_method or "card").lower()
+    if method not in STRIPE_METHOD_MAP:
+        raise HTTPException(400, "Unsupported payment method")
 
     if is_placeholder:
         mock_session_id = f"mock_{uuid.uuid4().hex}"
         await db.bookings.update_one(
             {"id": body.booking_id, "payment_status": {"$ne": "paid"}},
-            {"$set": {"checkout_session_id": mock_session_id, "payment_status": "unpaid"}},
+            {"$set": {"checkout_session_id": mock_session_id, "payment_status": "unpaid", "payment_method": method}},
         )
-        # Point at our own mock checkout page hosted by the app
-        checkout_url = f"{frontend_base}/mock-checkout?session_id={mock_session_id}&booking_id={body.booking_id}&amount={DEPOSIT_AMOUNT_MINOR}"
-        return {"checkout_url": checkout_url, "session_id": mock_session_id, "mock": True}
+        checkout_url = f"{frontend_base}/mock-checkout?session_id={mock_session_id}&booking_id={body.booking_id}&amount={DEPOSIT_AMOUNT_MINOR}&method={method}"
+        return {"checkout_url": checkout_url, "session_id": mock_session_id, "mock": True, "payment_method": method}
 
     success_url = f"{frontend_base}/payment/return?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{frontend_base}/payment/return?cancelled=1"
     try:
         session = await run_in_threadpool(lambda: stripe.checkout.Session.create(
             mode="payment",
+            payment_method_types=STRIPE_METHOD_MAP[method],
             line_items=[{
                 "price_data": {
                     "currency": CURRENCY,
@@ -614,8 +627,8 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
             }],
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"booking_id": body.booking_id, "user_id": user["id"]},
-            payment_intent_data={"metadata": {"booking_id": body.booking_id, "user_id": user["id"]}},
+            metadata={"booking_id": body.booking_id, "user_id": user["id"], "payment_method": method},
+            payment_intent_data={"metadata": {"booking_id": body.booking_id, "user_id": user["id"], "payment_method": method}},
         ))
     except stripe.error.StripeError as e:
         logger.exception("Stripe error: %s", e)
@@ -623,9 +636,9 @@ async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
 
     await db.bookings.update_one(
         {"id": body.booking_id, "payment_status": {"$ne": "paid"}},
-        {"$set": {"checkout_session_id": session.id, "payment_status": "unpaid"}},
+        {"$set": {"checkout_session_id": session.id, "payment_status": "unpaid", "payment_method": method}},
     )
-    return {"checkout_url": session.url, "session_id": session.id, "mock": False}
+    return {"checkout_url": session.url, "session_id": session.id, "mock": False, "payment_method": method}
 
 
 @api_router.get("/payments/verify/{session_id}")

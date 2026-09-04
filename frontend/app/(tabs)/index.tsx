@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, Artist, Featured } from "../../src/api";
 import { useSession } from "../../src/session";
 import { useFavorites } from "../../src/favorites";
+import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
 import { fmtPHP } from "../../src/currency";
 
@@ -29,6 +30,7 @@ function useCountdown(endIso: string) {
 
 function FeaturedCard({ featured, onPress }: { featured: Featured; onPress: () => void }) {
   const countdown = useCountdown(featured.deal_ends_at);
+  const { t } = useI18n();
   return (
     <Pressable testID="featured-artist-card" onPress={onPress} style={styles.featWrap}>
       <View style={styles.featImage}>
@@ -38,7 +40,7 @@ function FeaturedCard({ featured, onPress }: { featured: Featured; onPress: () =
           <View style={styles.featBadgeRow}>
             <View style={styles.featBadge}>
               <Icon name="zap" size={12} color={colors.onBrand} />
-              <Text style={styles.featBadgeText}>{featured.headline}</Text>
+              <Text style={styles.featBadgeText}>{t("discover.featured")}</Text>
             </View>
             <View style={styles.featDiscount}>
               <Text style={styles.featDiscountText}>-{featured.discount_pct}%</Text>
@@ -49,11 +51,11 @@ function FeaturedCard({ featured, onPress }: { featured: Featured; onPress: () =
             <Text style={styles.featStory}>{featured.story}</Text>
             <View style={styles.featBottom}>
               <View>
-                <Text style={styles.featMetaLabel}>ENDS IN</Text>
+                <Text style={styles.featMetaLabel}>{t("discover.featured.endsIn")}</Text>
                 <Text style={styles.featMetaValue}>{countdown}</Text>
               </View>
               <View style={styles.featCta}>
-                <Text style={styles.featCtaText}>BOOK NOW</Text>
+                <Text style={styles.featCtaText}>{t("discover.featured.cta")}</Text>
                 <Icon name="arrow-right" size={16} color={colors.onBrand} />
               </View>
             </View>
@@ -69,6 +71,7 @@ export default function Discover() {
   const router = useRouter();
   const { user } = useSession();
   const { isFavorite, toggle } = useFavorites();
+  const { t } = useI18n();
   const [style, setStyle] = useState("All");
   const [q, setQ] = useState("");
   const [artists, setArtists] = useState<Artist[]>([]);
@@ -107,8 +110,8 @@ export default function Discover() {
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.hi}>HELLO, {user?.name?.split(" ")[0]?.toUpperCase() ?? "INK"}</Text>
-            <Text style={styles.headerTitle}>DISCOVER</Text>
+            <Text style={styles.hi}>{t("discover.hello")}, {user?.name?.split(" ")[0]?.toUpperCase() ?? "INK"}</Text>
+            <Text style={styles.headerTitle}>{t("tab.discover")}</Text>
           </View>
           <View style={styles.logo}><Text style={styles.logoText}>INK</Text></View>
         </View>
@@ -119,7 +122,7 @@ export default function Discover() {
             testID="discover-search-input"
             value={q}
             onChangeText={setQ}
-            placeholder="SEARCH ARTISTS"
+            placeholder={t("discover.search")}
             placeholderTextColor={colors.muted}
             style={styles.searchInput}
             autoCapitalize="none"
@@ -152,9 +155,9 @@ export default function Discover() {
         <View style={styles.center}><ActivityIndicator color={colors.brand} size="large" /></View>
       ) : artists.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyBig}>NO{"\n"}ARTISTS{"\n"}FOUND</Text>
+          <Text style={styles.emptyBig}>{t("discover.empty")}</Text>
           <Pressable onPress={() => { setStyle("All"); setQ(""); }} style={styles.resetBtn}>
-            <Text style={styles.resetText}>RESET FILTERS</Text>
+            <Text style={styles.resetText}>{t("discover.reset")}</Text>
           </Pressable>
         </View>
       ) : (
