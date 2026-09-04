@@ -75,8 +75,19 @@ export default function BookingsTab() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
           renderItem={({ item }) => {
             const d = new Date(item.date + "T00:00:00");
+            const today0 = new Date(); today0.setHours(0,0,0,0);
+            const daysAway = Math.round((d.getTime() - today0.getTime()) / 86400000);
+            const upcomingSoon = item.status !== "cancelled" && daysAway >= 0 && daysAway <= 3;
+            const reminderText = daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `${daysAway} DAYS AWAY`;
             return (
               <View style={styles.row} testID={`booking-row-${item.id}`}>
+                {upcomingSoon && (
+                  <View style={styles.reminderBanner} testID={`reminder-${item.id}`}>
+                    <Icon name="bell" size={11} color={colors.onBrand} />
+                    <Text style={styles.reminderText}>{reminderText} — GET READY</Text>
+                  </View>
+                )}
+                <View style={styles.rowInner}>
                 <View style={styles.dateBlock}>
                   <Text style={styles.day}>{d.getDate().toString().padStart(2, "0")}</Text>
                   <Text style={styles.mon}>{d.toLocaleString("en", { month: "short" }).toUpperCase()}</Text>
@@ -122,6 +133,7 @@ export default function BookingsTab() {
                     )}
                   </View>
                 </View>
+                </View>
               </View>
             );
           }}
@@ -144,7 +156,10 @@ const styles = StyleSheet.create({
   emptyBig: { color: colors.onSurface, fontSize: 44, fontWeight: "900", letterSpacing: 2, textAlign: "center", lineHeight: 48 },
   cta: { backgroundColor: colors.brand, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   ctaText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
-  row: { flexDirection: "row", padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.md },
+  row: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  rowInner: { flexDirection: "row", gap: spacing.md },
+  reminderBanner: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.brand, paddingHorizontal: spacing.md, paddingVertical: 6, marginBottom: spacing.md, borderWidth: 2, borderColor: colors.borderStrong },
+  reminderText: { color: colors.onBrand, fontSize: 11, fontWeight: "900", letterSpacing: 2 },
   dateBlock: { width: 60, borderRightWidth: 2, borderRightColor: colors.border, paddingRight: spacing.md, alignItems: "flex-start" },
   day: { color: colors.onSurface, fontSize: 36, fontWeight: "900", lineHeight: 38 },
   mon: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 2 },

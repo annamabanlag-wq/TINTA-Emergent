@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Modal, Share, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ImageViewer from "../../src/ImageViewer";
 import { api, Artist, Review } from "../../src/api";
 import { useSession } from "../../src/session";
 import { useFavorites } from "../../src/favorites";
@@ -23,6 +24,8 @@ export default function ArtistDetail() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -47,6 +50,23 @@ export default function ArtistDetail() {
     } finally { setPosting(false); }
   };
 
+  const shareArtist = async () => {
+    if (!artist) return;
+    const message = `Check out ${artist.name} on Inked — ${artist.styles.slice(0, 2).join(", ")} · ${artist.city}\n\ninked://artist/${artist.id}`;
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && (navigator as any).share) {
+        await (navigator as any).share({ title: `${artist.name} on Inked`, text: message });
+        return;
+      }
+      await Share.share({ message, title: `${artist.name} on Inked` });
+    } catch { /* user cancelled */ }
+  };
+
+  const openViewer = (index: number) => {
+    setViewerIndex(index);
+    setViewerOpen(true);
+  };
+
   if (loading || !artist) {
     return <View style={styles.center}><ActivityIndicator color={colors.brand} size="large" /></View>;
   }
@@ -69,6 +89,9 @@ export default function ArtistDetail() {
                 style={styles.iconBtn}
               >
                 <Icon name="heart" size={20} color={isFavorite(artist.id) ? colors.brand : colors.onSurface} />
+              </Pressable>
+              <Pressable testID="artist-share-button" onPress={shareArtist} style={styles.iconBtn}>
+                <Icon name="share-2" size={20} color={colors.onSurface} />
               </Pressable>
               <Pressable
                 testID="message-artist-button"
@@ -130,9 +153,17 @@ export default function ArtistDetail() {
           <Text style={styles.blockTitle}>PORTFOLIO</Text>
           <View style={styles.portfolioGrid}>
             {artist.portfolio.map((p, i) => (
-              <View key={i} style={styles.portItem}>
+              <Pressable
+                key={i}
+                testID={`portfolio-item-${i}`}
+                onPress={() => openViewer(i)}
+                style={styles.portItem}
+              >
                 <Image source={p} style={StyleSheet.absoluteFill} contentFit="cover" />
-              </View>
+                <View style={styles.portZoomHint}>
+                  <Icon name="maximize-2" size={12} color={colors.onSurface} />
+                </View>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -214,6 +245,15 @@ export default function ArtistDetail() {
           </View>
         </View>
       </Modal>
+
+      {/* Portfolio zoom viewer */}
+      <ImageViewer
+        images={artist.portfolio}
+        index={viewerIndex}
+        visible={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        caption={artist.name.toUpperCase()}
+      />
     </View>
   );
 }
@@ -241,6 +281,7 @@ const styles = StyleSheet.create({
   styleTagText: { color: colors.onSurface, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
   portfolioGrid: { flexDirection: "row", flexWrap: "wrap", gap: 2 },
   portItem: { width: "49.5%", aspectRatio: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  portZoomHint: { position: "absolute", top: 8, right: 8, width: 24, height: 24, backgroundColor: "rgba(10,10,10,0.7)", borderWidth: 1, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center" },
   reviewHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   writeReview: { color: colors.onSurface, fontSize: 12, fontWeight: "900", letterSpacing: 2 },
   noReviews: { color: colors.muted, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
