@@ -38,6 +38,7 @@ export default function ProfileTab() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>ACCOUNT</Text>
+        <Row icon="heart" label="MY WISHLIST" onPress={() => router.push("/favorites")} testID="profile-favorites-row" />
         <Row icon="calendar" label="MY BOOKINGS" onPress={() => router.push("/(tabs)/bookings")} testID="profile-bookings-row" />
         <Row icon="message-square" label="MESSAGES" onPress={() => router.push("/(tabs)/messages")} testID="profile-messages-row" />
         <Row icon="search" label="DISCOVER ARTISTS" onPress={() => router.push("/(tabs)")} testID="profile-discover-row" />

@@ -5,19 +5,73 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { api, Artist } from "../../src/api";
+import { api, Artist, Featured } from "../../src/api";
 import { useSession } from "../../src/session";
+import { useFavorites } from "../../src/favorites";
 import { colors, spacing } from "../../src/theme";
 
 const STYLES = ["All", "Blackwork", "Fineline", "Traditional", "Realism", "Japanese", "Neo-Traditional", "Geometric"];
+
+function useCountdown(endIso: string) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const end = new Date(endIso).getTime();
+  let diff = Math.max(0, end - now);
+  const days = Math.floor(diff / 86400000); diff -= days * 86400000;
+  const hours = Math.floor(diff / 3600000); diff -= hours * 3600000;
+  const mins = Math.floor(diff / 60000);
+  return `${days}D ${hours}H ${mins}M`;
+}
+
+function FeaturedCard({ featured, onPress }: { featured: Featured; onPress: () => void }) {
+  const countdown = useCountdown(featured.deal_ends_at);
+  return (
+    <Pressable testID="featured-artist-card" onPress={onPress} style={styles.featWrap}>
+      <View style={styles.featImage}>
+        <Image source={featured.artist.hero} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <LinearGradient colors={["rgba(10,10,10,0.5)", "rgba(10,10,10,0.95)"]} style={StyleSheet.absoluteFill} />
+        <View style={styles.featContent}>
+          <View style={styles.featBadgeRow}>
+            <View style={styles.featBadge}>
+              <Icon name="zap" size={12} color={colors.onBrand} />
+              <Text style={styles.featBadgeText}>{featured.headline}</Text>
+            </View>
+            <View style={styles.featDiscount}>
+              <Text style={styles.featDiscountText}>-{featured.discount_pct}%</Text>
+            </View>
+          </View>
+          <View>
+            <Text style={styles.featName}>{featured.artist.name.toUpperCase()}</Text>
+            <Text style={styles.featStory}>{featured.story}</Text>
+            <View style={styles.featBottom}>
+              <View>
+                <Text style={styles.featMetaLabel}>ENDS IN</Text>
+                <Text style={styles.featMetaValue}>{countdown}</Text>
+              </View>
+              <View style={styles.featCta}>
+                <Text style={styles.featCtaText}>BOOK NOW</Text>
+                <Icon name="arrow-right" size={16} color={colors.onBrand} />
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function Discover() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useSession();
+  const { isFavorite, toggle } = useFavorites();
   const [style, setStyle] = useState("All");
   const [q, setQ] = useState("");
   const [artists, setArtists] = useState<Artist[]>([]);
+  const [featured, setFeatured] = useState<Featured | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -26,9 +80,13 @@ export default function Discover() {
       const params = new URLSearchParams();
       if (style && style !== "All") params.set("style", style);
       if (q) params.set("q", q);
-      const data = await api<Artist[]>(`/artists?${params.toString()}`);
+      const [data, f] = await Promise.all([
+        api<Artist[]>(`/artists?${params.toString()}`),
+        api<Featured>(`/featured`).catch(() => null),
+      ]);
       setArtists(data);
-    } catch (e) {
+      setFeatured(f);
+    } catch {
       setArtists([]);
     } finally {
       setLoading(false);
@@ -39,6 +97,8 @@ export default function Discover() {
   useEffect(() => { load(); }, [load]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  const showFeatured = featured && style === "All" && !q;
 
   return (
     <View style={styles.root}>
@@ -102,38 +162,55 @@ export default function Discover() {
           keyExtractor={(a) => a.id}
           contentContainerStyle={{ paddingBottom: spacing.xl }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
-          renderItem={({ item }) => (
-            <Pressable
-              testID={`artist-card-${item.id}`}
-              onPress={() => router.push(`/artist/${item.id}`)}
-              style={styles.card}
-            >
-              <View style={styles.cardImageWrap}>
-                <Image source={item.hero} style={StyleSheet.absoluteFill} contentFit="cover" />
-                <LinearGradient colors={["transparent", "rgba(10,10,10,0.95)"]} style={StyleSheet.absoluteFill} />
-                <View style={styles.cardOverlay}>
-                  <View style={styles.cardTopRow}>
-                    <View style={styles.ratingPill}>
-                      <Icon name="star" size={10} color={colors.warning} />
-                      <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-                    </View>
-                    <Text style={styles.cardRate}>${item.rate_per_hour}/HR</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.cardName}>{item.name.toUpperCase()}</Text>
-                    <Text style={styles.cardMeta}>{item.city.toUpperCase()} · {item.studio.toUpperCase()}</Text>
-                    <View style={styles.styleRow}>
-                      {item.styles.slice(0, 3).map((s) => (
-                        <View key={s} style={styles.styleTag}>
-                          <Text style={styles.styleTagText}>{s.toUpperCase()}</Text>
+          ListHeaderComponent={
+            showFeatured ? <FeaturedCard featured={featured!} onPress={() => router.push(`/artist/${featured!.artist.id}`)} /> : null
+          }
+          renderItem={({ item }) => {
+            const fav = isFavorite(item.id);
+            return (
+              <View style={styles.cardWrapper}>
+                <Pressable
+                  testID={`artist-card-${item.id}`}
+                  onPress={() => router.push(`/artist/${item.id}`)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardImageWrap}>
+                    <Image source={item.hero} style={StyleSheet.absoluteFill} contentFit="cover" />
+                    <LinearGradient colors={["transparent", "rgba(10,10,10,0.95)"]} style={StyleSheet.absoluteFill} />
+                    <View style={styles.cardOverlay}>
+                      <View style={styles.cardTopRow}>
+                        <View style={styles.ratingPill}>
+                          <Icon name="star" size={10} color={colors.warning} />
+                          <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
                         </View>
-                      ))}
+                        <Text style={styles.cardRate}>${item.rate_per_hour}/HR</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.cardName}>{item.name.toUpperCase()}</Text>
+                        <Text style={styles.cardMeta}>{item.city.toUpperCase()} · {item.studio.toUpperCase()}</Text>
+                        <View style={styles.styleRow}>
+                          {item.styles.slice(0, 3).map((s) => (
+                            <View key={s} style={styles.styleTag}>
+                              <Text style={styles.styleTagText}>{s.toUpperCase()}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
                     </View>
                   </View>
-                </View>
+                </Pressable>
+                {/* Heart lives OUTSIDE the card Pressable to prevent tap bubbling */}
+                <Pressable
+                  testID={`favorite-toggle-${item.id}`}
+                  onPress={() => toggle(item.id)}
+                  hitSlop={12}
+                  style={styles.heartBtn}
+                >
+                  <Icon name="heart" size={20} color={fav ? colors.brand : colors.onSurface} />
+                </Pressable>
               </View>
-            </Pressable>
-          )}
+            );
+          }}
         />
       )}
     </View>
@@ -170,13 +247,21 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
   chipTextActive: { color: colors.onBrand },
+  cardWrapper: { position: "relative" },
   card: {
     marginTop: spacing.md, marginHorizontal: spacing.lg,
     borderWidth: 2, borderColor: colors.borderStrong,
   },
   cardImageWrap: { aspectRatio: 3 / 4, backgroundColor: colors.surfaceSecondary },
+  heartBtn: {
+    position: "absolute", top: spacing.md + spacing.md, left: spacing.lg + spacing.md,
+    width: 40, height: 40, backgroundColor: "rgba(10,10,10,0.7)",
+    borderWidth: 2, borderColor: colors.borderStrong,
+    alignItems: "center", justifyContent: "center",
+    zIndex: 2,
+  },
   cardOverlay: { flex: 1, padding: spacing.md, justifyContent: "space-between" },
-  cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginLeft: 52 },
   ratingPill: {
     flexDirection: "row", alignItems: "center", gap: 4,
     backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.borderStrong,
@@ -193,4 +278,21 @@ const styles = StyleSheet.create({
   emptyBig: { color: colors.onSurface, fontSize: 48, fontWeight: "900", letterSpacing: 2, textAlign: "center", lineHeight: 52 },
   resetBtn: { backgroundColor: colors.brand, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   resetText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
+
+  // Featured
+  featWrap: { marginTop: spacing.md, marginHorizontal: spacing.lg, borderWidth: 2, borderColor: colors.brand },
+  featImage: { aspectRatio: 4 / 5, backgroundColor: colors.surfaceSecondary },
+  featContent: { flex: 1, padding: spacing.md, justifyContent: "space-between" },
+  featBadgeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  featBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.brand, paddingHorizontal: spacing.sm, paddingVertical: 6, borderWidth: 2, borderColor: colors.borderStrong },
+  featBadgeText: { color: colors.onBrand, fontSize: 11, fontWeight: "900", letterSpacing: 2 },
+  featDiscount: { backgroundColor: colors.onSurface, paddingHorizontal: spacing.sm, paddingVertical: 6, borderWidth: 2, borderColor: colors.borderStrong },
+  featDiscountText: { color: colors.surface, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
+  featName: { color: colors.onSurface, fontSize: 40, fontWeight: "900", letterSpacing: 2, marginBottom: spacing.sm },
+  featStory: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
+  featBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
+  featMetaLabel: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 2 },
+  featMetaValue: { color: colors.onSurface, fontSize: 18, fontWeight: "900", letterSpacing: 1, marginTop: 2 },
+  featCta: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.brand, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderWidth: 2, borderColor: colors.brand },
+  featCtaText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
 });

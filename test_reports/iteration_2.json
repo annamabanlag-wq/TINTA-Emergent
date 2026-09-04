@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 2 covers the four new features: Reference Photo Upload, Featured/Deal-of-the-Week, Favorites/Wishlist, and Real+Mock Stripe deposit checkout. Backend: 16/16 new tests PASSED and 18/18 regression tests re-verified (total 34/34). Endpoints validated: GET /api/featured (returns artist+headline+story+deal_ends_at+discount_pct), POST /api/favorites/toggle on/off + GET /api/favorites/ids + GET /api/favorites, POST /api/upload (multipart image, 400 on non-image, 401 without auth, 200 with Bearer, returns url/path/size), GET /api/files/{path} (401 without auth, 200 with Bearer header AND with ?token= query), POST /api/payments/checkout-session (mock:true, session_id starts with 'mock_', booking gets checkout_session_id + stays unpaid), GET /api/payments/verify/{mock_session_id} (returns paid:false pre-confirm, paid:true post-confirm, mock:true), POST /api/payments/mock-confirm (marks booking payment_status=paid with payment_intent_id starting 'pi_mock_'), cross-user verify returns 404 (isolation OK), duplicate checkout on paid booking returns 409. Booking creation now accepts reference_image URL and defaults payment_status='unpaid'. Frontend (390x844 mobile viewport): Featured 'ARTIST OF THE WEEK' card renders at top of Discover with -15% badge, artist name (Mara Voss), story, countdown timer, BOOK NOW CTA — VERIFIED. Featured card hides when Blackwork filter is applied and reappears on 'All' — VERIFIED. Heart icons on artist cards (testID favorite-toggle-<id>) present, artist detail top-right heart (testID artist-heart-button) present. Profile has MY WISHLIST row (testID profile-favorites-row) linking to /favorites with testIDs fav-card-<id>, fav-remove-<id>, fav-back, fav-explore-cta. Booking flow step 2 shows 'ADD INSPIRATION PHOTO' button (testID pick-ref-image) with correct copy. Booking flow step 3 CTA reads 'PAY $50 DEPOSIT' with lock icon (verified in code and screenshot). Post-confirm screen renders 'BOOKING CONFIRMED' with 'DEPOSIT $50 PAID' line. Bookings tab has PAID/UNPAID pill support and booking-row-<id> testIDs. Regression: sign-in, artist detail, book flow, bookings tab all working. Non-blocking observation: favorite heart Pressable inside artist card uses e.stopPropagation?.() but under Playwright force-click the parent card Pressable also fires and navigates to artist detail — recommend main agent verify on a real touch device / manual browser tap that the heart tap does NOT open the artist detail. All 4 new features integrate correctly with backend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/(tabs)/index.tsx artist card heart",
+        "issue": "favorite-toggle Pressable is a sibling of an outer Pressable wrapping the artist card; under React Native Web synthetic events, tapping the heart can also trigger the parent onPress and navigate to /artist/[id]. e.stopPropagation?.() is called but may not stop the outer Pressable. Consider making the outer wrapper a View + inner Pressable for BOOK area, or intercept with an overlay Pressable and use onStartShouldSetResponder / pointerEvents='box-only'.",
+        "testID": "favorite-toggle-<id>",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Feather icons",
+        "issue": "'Failed to load font Feather NetworkError' warning shown on some screens (chat toast). Icons still render as glyphs. Main agent may want to preload with expo-font.useFonts.",
+        "testID": "",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_new_features.xml"
+  ],
+  "action_items": [
+    "Verify manually (real touch tap in mobile browser or Expo Go) that tapping the heart on a Discover artist card toggles the favorite WITHOUT navigating to the artist detail. If it does navigate, refactor: swap outer Pressable to a View wrapping content and put a single Pressable over the 'body' area, or use pointerEvents='box-none' on the container.",
+    "(Optional) Preload Feather font with expo-font.useFonts to remove the 'Failed to load font Feather' toast.",
+    "(Optional) Test real Stripe checkout path by setting STRIPE_API_KEY to a real sk_test_... key — the current mock path (sk_test_emergent placeholder) is fully verified."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 853 lines — nearing the 700-line guideline. Consider splitting into routers (auth, artists, bookings, reviews, messages, uploads, payments, favorites, featured).",
+    "Stripe mock detection uses hard-coded placeholder string 'sk_test_emergent' (server.py:538). Fine, but consider also treating empty string as mock (already covered).",
+    "/api/files/{path} does not restrict access to file owner (allows any authenticated user). Comment says intentional so artists can view refs. Acceptable for MVP; document this in security notes.",
+    "Booking checkout_session_id is only updated when payment_status != 'paid' — good idempotency. Same guard for mock-confirm is missing (allows re-marking paid) — low impact.",
+    "Favorite toggle race: two concurrent toggles could both insert or both delete; acceptable for MVP.",
+    "Upload metadata stored in db.uploads is never garbage-collected on booking delete. Not blocking for MVP."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "~95% (all new-feature UI elements verified; heart-tap-vs-card-tap needs manual confirmation)"},
+  "seed_data_creation": "Reused seeded 6 artists + demo user. Tests create TEST_-prefixed bookings/users; a real 1x1 PNG uploaded via /api/upload to Emergent Object Storage (storage available in this pod).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests split: /app/backend/tests/backend_test.py (regression) and /app/backend/tests/test_new_features.py (new features). Run with `python -m pytest backend/tests/ -o addopts='' -v` (disable the xdist parallel config in backend/pytest.ini for the new-features file because class-level state is shared across tests — module fixtures + module-scoped state). New testIDs to know: featured-artist-card, favorite-toggle-<artist_id>, artist-heart-button, profile-favorites-row, fav-back, fav-card-<id>, fav-remove-<id>, fav-explore-cta, pick-ref-image, remove-ref-image, book-confirm-button (text 'PAY $50 DEPOSIT'). Sign-in testIDs are signin-email-input / signin-password-input / signin-submit-button. Stripe placeholder key is sk_test_emergent → mock path (mock_ session ids). window.confirm auto-accept required in Playwright for the mock payment confirmation."
+}

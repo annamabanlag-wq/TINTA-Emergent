@@ -1,8 +1,11 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header, status, UploadFile, File, Request, Response
+from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import io
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -11,6 +14,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
+import requests
+import stripe
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -22,6 +27,18 @@ db = client[os.environ["DB_NAME"]]
 JWT_SECRET = os.environ.get("JWT_SECRET", "inked-dev-secret-change-me")
 JWT_ALG = "HS256"
 JWT_MINUTES = 60 * 24 * 7  # 7 days
+
+# Stripe
+stripe.api_key = os.environ.get("STRIPE_API_KEY", "")
+DEPOSIT_AMOUNT_CENTS = 5000  # $50
+BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "")
+
+# Emergent Object Storage
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "inked-tattoo"
+storage_key: Optional[str] = None
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -99,6 +116,9 @@ class Booking(BaseModel):
     estimated_hours: int
     deposit: int
     status: str  # confirmed | completed | cancelled
+    payment_status: str = "unpaid"  # unpaid | paid | refunded
+    checkout_session_id: Optional[str] = None
+    payment_intent_id: Optional[str] = None
     created_at: str
 
 
@@ -260,6 +280,9 @@ async def create_booking(body: BookingIn, user=Depends(current_user)):
         "estimated_hours": body.estimated_hours,
         "deposit": deposit,
         "status": "confirmed",
+        "payment_status": "unpaid",
+        "checkout_session_id": None,
+        "payment_intent_id": None,
         "created_at": now_iso(),
     }
     await db.bookings.insert_one(booking)
@@ -382,6 +405,312 @@ async def send_message(body: MessageIn, user=Depends(current_user)):
             {"$set": {"last_message": reply["text"], "last_at": reply["created_at"]}},
         )
     return msg
+
+
+# ---------- Object Storage (Emergent) ----------
+def init_storage() -> Optional[str]:
+    global storage_key
+    if storage_key:
+        return storage_key
+    if not EMERGENT_KEY:
+        logger.warning("EMERGENT_LLM_KEY not set — uploads disabled")
+        return None
+    try:
+        resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        resp.raise_for_status()
+        storage_key = resp.json()["storage_key"]
+        logger.info("Object storage initialized")
+        return storage_key
+    except Exception as exc:
+        logger.exception("Storage init failed: %s", exc)
+        return None
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    if not key:
+        raise HTTPException(503, "Storage not available")
+    resp = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data,
+        timeout=120,
+    )
+    if resp.status_code == 503:
+        # Stale storage key — refresh once
+        globals()["storage_key"] = None
+        key = init_storage()
+        if not key:
+            raise HTTPException(503, "Storage unavailable")
+        resp = requests.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            data=data,
+            timeout=120,
+        )
+    if resp.status_code == 402:
+        raise HTTPException(402, "Storage credits exhausted")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object(path: str) -> tuple[bytes, str]:
+    key = init_storage()
+    if not key:
+        raise HTTPException(503, "Storage not available")
+    resp = requests.get(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key},
+        timeout=60,
+    )
+    if resp.status_code == 500:
+        raise HTTPException(404, "File not found")
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+class UploadOut(BaseModel):
+    url: str
+    path: str
+    size: int
+
+
+@api_router.post("/upload", response_model=UploadOut)
+async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image uploads are supported")
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, "File too large (max 10MB)")
+    ext = (file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg").lower()
+    ext = "".join(c for c in ext if c.isalnum())[:5] or "jpg"
+    path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
+    result = await run_in_threadpool(put_object, path, data, file.content_type)
+    stored_path = result.get("path", path)
+    # Save metadata for ownership check
+    await db.uploads.insert_one({
+        "path": stored_path,
+        "owner_id": user["id"],
+        "content_type": file.content_type,
+        "size": len(data),
+        "created_at": now_iso(),
+    })
+    # Build API URL that clients use to fetch
+    base = os.environ.get("BACKEND_PUBLIC_URL") or ""
+    file_url = f"{base}/api/files/{stored_path}"
+    return {"url": file_url, "path": stored_path, "size": len(data)}
+
+
+@api_router.get("/files/{path:path}")
+async def serve_file(path: str, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    # Support either Bearer header or ?token= query param (for <img> web usage)
+    auth = authorization or (f"Bearer {token}" if token else None)
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(401, "Not authenticated")
+    try:
+        payload = jwt.decode(auth[7:], JWT_SECRET, algorithms=[JWT_ALG])
+        uid = payload["sub"]
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    meta = await db.uploads.find_one({"path": path}, {"_id": 0})
+    if not meta:
+        raise HTTPException(404, "Not found")
+    # For MVP, any authenticated user can view a reference image (artists may need this too)
+    data, content_type = await run_in_threadpool(get_object, path)
+    return Response(content=data, media_type=content_type)
+
+
+# ---------- Stripe ----------
+class CheckoutIn(BaseModel):
+    booking_id: str
+    platform: str = "native"  # "native" | "web"
+
+
+@api_router.post("/payments/checkout-session")
+async def create_checkout_session(body: CheckoutIn, user=Depends(current_user)):
+    booking = await db.bookings.find_one({"id": body.booking_id, "user_id": user["id"]}, {"_id": 0})
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+    if booking.get("payment_status") == "paid":
+        raise HTTPException(409, "Booking is already paid")
+
+    # If Stripe not configured with a real key, use a mock checkout page
+    is_placeholder = (not stripe.api_key) or stripe.api_key in ("sk_test_emergent", "")
+    frontend_base = os.environ.get("BACKEND_PUBLIC_URL") or "https://tattoo-reserve-7.preview.emergentagent.com"
+
+    if is_placeholder:
+        mock_session_id = f"mock_{uuid.uuid4().hex}"
+        await db.bookings.update_one(
+            {"id": body.booking_id, "payment_status": {"$ne": "paid"}},
+            {"$set": {"checkout_session_id": mock_session_id, "payment_status": "unpaid"}},
+        )
+        # Point at our own mock checkout page hosted by the app
+        checkout_url = f"{frontend_base}/mock-checkout?session_id={mock_session_id}&booking_id={body.booking_id}&amount={DEPOSIT_AMOUNT_CENTS}"
+        return {"checkout_url": checkout_url, "session_id": mock_session_id, "mock": True}
+
+    success_url = f"{frontend_base}/payment/return?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{frontend_base}/payment/return?cancelled=1"
+    try:
+        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": f"Tattoo deposit — {booking['artist_name']}"},
+                    "unit_amount": DEPOSIT_AMOUNT_CENTS,
+                },
+                "quantity": 1,
+            }],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"booking_id": body.booking_id, "user_id": user["id"]},
+            payment_intent_data={"metadata": {"booking_id": body.booking_id, "user_id": user["id"]}},
+        ))
+    except stripe.error.StripeError as e:
+        logger.exception("Stripe error: %s", e)
+        raise HTTPException(502, "Unable to create payment session")
+
+    await db.bookings.update_one(
+        {"id": body.booking_id, "payment_status": {"$ne": "paid"}},
+        {"$set": {"checkout_session_id": session.id, "payment_status": "unpaid"}},
+    )
+    return {"checkout_url": session.url, "session_id": session.id, "mock": False}
+
+
+@api_router.get("/payments/verify/{session_id}")
+async def verify_payment(session_id: str, user=Depends(current_user)):
+    # Mock verification path — booking has been "paid" via our mock page
+    if session_id.startswith("mock_"):
+        booking = await db.bookings.find_one({"checkout_session_id": session_id, "user_id": user["id"]}, {"_id": 0})
+        if not booking:
+            raise HTTPException(404, "Session not found")
+        if booking.get("payment_status") == "paid":
+            return {"paid": True, "booking_id": booking["id"], "payment_status": "paid", "mock": True}
+        return {"paid": False, "booking_id": booking["id"], "payment_status": "unpaid", "mock": True}
+
+    if not stripe.api_key:
+        raise HTTPException(503, "Stripe not configured")
+    try:
+        session = await run_in_threadpool(lambda: stripe.checkout.Session.retrieve(session_id))
+    except stripe.error.StripeError:
+        raise HTTPException(400, "Invalid session")
+    metadata = session.get("metadata") or {}
+    booking_id = metadata.get("booking_id")
+    if not booking_id:
+        raise HTTPException(400, "Missing booking reference")
+    if metadata.get("user_id") != user["id"]:
+        raise HTTPException(403, "Not your session")
+    if session.get("mode") != "payment":
+        raise HTTPException(400, "Wrong mode")
+    if session.get("currency") != "usd" or session.get("amount_total") != DEPOSIT_AMOUNT_CENTS:
+        raise HTTPException(400, "Amount mismatch")
+
+    if session.get("payment_status") == "paid":
+        payment_intent = session.get("payment_intent")
+        await db.bookings.update_one(
+            {"id": booking_id, "user_id": user["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {
+                "payment_status": "paid",
+                "payment_intent_id": payment_intent,
+                "paid_at": now_iso(),
+            }},
+        )
+        return {"paid": True, "booking_id": booking_id, "payment_status": "paid"}
+    return {"paid": False, "booking_id": booking_id, "payment_status": session.get("payment_status")}
+
+
+class MockConfirmIn(BaseModel):
+    session_id: str
+
+
+@api_router.post("/payments/mock-confirm")
+async def mock_confirm(body: MockConfirmIn, user=Depends(current_user)):
+    """Called by the mock checkout page to simulate a successful payment."""
+    booking = await db.bookings.find_one({"checkout_session_id": body.session_id, "user_id": user["id"]}, {"_id": 0})
+    if not booking:
+        raise HTTPException(404, "Session not found")
+    await db.bookings.update_one(
+        {"id": booking["id"], "user_id": user["id"]},
+        {"$set": {
+            "payment_status": "paid",
+            "payment_intent_id": f"pi_mock_{uuid.uuid4().hex}",
+            "paid_at": now_iso(),
+        }},
+    )
+    return {"paid": True, "booking_id": booking["id"]}
+
+
+# ---------- Favorites ----------
+class FavoriteToggleIn(BaseModel):
+    artist_id: str
+
+
+@api_router.get("/favorites", response_model=List[Artist])
+async def list_favorites(user=Depends(current_user)):
+    favs = await db.favorites.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    ids = [f["artist_id"] for f in favs]
+    if not ids:
+        return []
+    artists = await db.artists.find({"id": {"$in": ids}}, {"_id": 0}).to_list(500)
+    return artists
+
+
+@api_router.get("/favorites/ids", response_model=List[str])
+async def favorite_ids(user=Depends(current_user)):
+    favs = await db.favorites.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    return [f["artist_id"] for f in favs]
+
+
+@api_router.post("/favorites/toggle")
+async def toggle_favorite(body: FavoriteToggleIn, user=Depends(current_user)):
+    existing = await db.favorites.find_one({"user_id": user["id"], "artist_id": body.artist_id})
+    if existing:
+        await db.favorites.delete_one({"user_id": user["id"], "artist_id": body.artist_id})
+        return {"favorited": False, "artist_id": body.artist_id}
+    await db.favorites.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "artist_id": body.artist_id,
+        "created_at": now_iso(),
+    })
+    return {"favorited": True, "artist_id": body.artist_id}
+
+
+# ---------- Featured (Deal of the Week) ----------
+class FeaturedOut(BaseModel):
+    artist: Artist
+    headline: str
+    story: str
+    deal_ends_at: str
+    discount_pct: int
+
+
+@api_router.get("/featured", response_model=FeaturedOut)
+async def featured():
+    # Deterministic featured artist that rotates weekly
+    week_index = datetime.now(timezone.utc).isocalendar().week
+    artists = await db.artists.find({}, {"_id": 0}).sort("id", 1).to_list(200)
+    if not artists:
+        raise HTTPException(404, "No artists")
+    picked = artists[week_index % len(artists)]
+    stories = [
+        "This week's spotlight. Known for pushing the limits of ink and skin — book now before the calendar closes.",
+        "Featured artist of the week. Booking a session unlocks a bonus custom sketch for your idea.",
+        "Hand-picked by our editors — a rare style, a bold voice. 15% off the deposit until Sunday.",
+    ]
+    # End of ISO week (Sunday 23:59 UTC)
+    now = datetime.now(timezone.utc)
+    days_until_sunday = 6 - now.weekday()
+    if days_until_sunday < 0:
+        days_until_sunday += 7
+    end = now.replace(hour=23, minute=59, second=0, microsecond=0) + timedelta(days=days_until_sunday)
+    return {
+        "artist": picked,
+        "headline": "ARTIST OF THE WEEK",
+        "story": stories[week_index % len(stories)],
+        "deal_ends_at": end.isoformat(),
+        "discount_pct": 15,
+    }
 
 
 # ---------- Seed ----------

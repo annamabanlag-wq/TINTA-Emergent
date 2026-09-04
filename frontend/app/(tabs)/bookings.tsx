@@ -96,8 +96,25 @@ export default function BookingsTab() {
                     </View>
                   </View>
                   <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
+                  {item.reference_image && (
+                    <View style={styles.refThumb}>
+                      <Image
+                        source={item.reference_image.startsWith("http") ? { uri: item.reference_image, headers: token ? { Authorization: `Bearer ${token}` } : undefined } : item.reference_image}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="cover"
+                      />
+                    </View>
+                  )}
                   <View style={styles.actionRow}>
-                    <Text style={styles.deposit}>DEPOSIT ${item.deposit}</Text>
+                    <View style={styles.depositRow}>
+                      <Text style={styles.deposit}>DEPOSIT ${item.deposit}</Text>
+                      <View style={[styles.payPill, item.payment_status === "paid" ? styles.payPillPaid : styles.payPillUnpaid]}>
+                        <Icon name={item.payment_status === "paid" ? "check" : "clock"} size={10} color={item.payment_status === "paid" ? colors.onSuccess : colors.warning} />
+                        <Text style={[styles.payPillText, { color: item.payment_status === "paid" ? colors.onSuccess : colors.warning }]}>
+                          {(item.payment_status || "unpaid").toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
                     {item.status !== "cancelled" && item.date >= today && (
                       <Pressable testID={`cancel-booking-${item.id}`} onPress={() => cancel(item.id)} style={styles.cancelBtn}>
                         <Text style={styles.cancelText}>CANCEL</Text>
@@ -142,7 +159,13 @@ const styles = StyleSheet.create({
   statusText: { color: colors.onSurface, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   desc: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18 },
   actionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xs },
+  depositRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   deposit: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  payPill: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 3 },
+  payPillPaid: { borderColor: colors.success, backgroundColor: "rgba(0,138,46,0.15)" },
+  payPillUnpaid: { borderColor: colors.warning },
+  payPillText: { fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
+  refThumb: { aspectRatio: 16 / 9, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs },
   cancelBtn: { borderWidth: 1, borderColor: colors.muted, paddingHorizontal: spacing.md, paddingVertical: 6 },
   cancelText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
 });

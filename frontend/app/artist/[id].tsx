@@ -7,6 +7,7 @@ import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, Artist, Review } from "../../src/api";
 import { useSession } from "../../src/session";
+import { useFavorites } from "../../src/favorites";
 import { colors, spacing } from "../../src/theme";
 
 export default function ArtistDetail() {
@@ -14,6 +15,7 @@ export default function ArtistDetail() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { token } = useSession();
+  const { isFavorite, toggle } = useFavorites();
   const [artist, setArtist] = useState<Artist | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,13 +62,22 @@ export default function ArtistDetail() {
             <Pressable testID="back-button" onPress={() => router.back()} style={styles.iconBtn}>
               <Icon name="arrow-left" size={20} color={colors.onSurface} />
             </Pressable>
-            <Pressable
-              testID="message-artist-button"
-              onPress={() => router.push(`/chat/${artist.id}`)}
-              style={styles.iconBtn}
-            >
-              <Icon name="message-square" size={20} color={colors.onSurface} />
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <Pressable
+                testID="artist-heart-button"
+                onPress={() => toggle(artist.id)}
+                style={styles.iconBtn}
+              >
+                <Icon name="heart" size={20} color={isFavorite(artist.id) ? colors.brand : colors.onSurface} />
+              </Pressable>
+              <Pressable
+                testID="message-artist-button"
+                onPress={() => router.push(`/chat/${artist.id}`)}
+                style={styles.iconBtn}
+              >
+                <Icon name="message-square" size={20} color={colors.onSurface} />
+              </Pressable>
+            </View>
           </View>
           <View style={styles.heroBottom}>
             <Text style={styles.artistName}>{artist.name.toUpperCase()}</Text>

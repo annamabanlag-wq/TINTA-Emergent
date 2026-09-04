@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Image } from "expo-image";
 import Icon from "@react-native-vector-icons/feather";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { api, Artist } from "../../src/api";
+import * as ImagePicker from "expo-image-picker";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
+import { api, Artist, uploadImage, CheckoutSessionOut, VerifyOut } from "../../src/api";
 import { useSession } from "../../src/session";
 import { colors, spacing } from "../../src/theme";
 
@@ -32,9 +36,13 @@ export default function BookScreen() {
   const [time, setTime] = useState<string>("");
   const [hours, setHours] = useState<number>(2);
   const [desc, setDesc] = useState("");
+  const [refUri, setRefUri] = useState<string | null>(null); // local URI or remote URL
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
+  const [bookingId, setBookingId] = useState<string | null>(null);
+  const [paid, setPaid] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -47,16 +55,123 @@ export default function BookScreen() {
   const total = (artist?.rate_per_hour ?? 0) * hours;
   const deposit = 50;
 
-  const submit = async () => {
+  const pickImage = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        setErr("Photo library permission needed to add references");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.7,
+        allowsEditing: false,
+      });
+      if (result.canceled) return;
+      const uri = result.assets?.[0]?.uri;
+      if (uri) setRefUri(uri);
+    } catch (e: any) {
+      setErr(e?.message ?? "Could not pick image");
+    }
+  };
+
+  const removeImage = () => setRefUri(null);
+
+  const createBookingAndPay = async () => {
     setErr(""); setBusy(true);
     try {
-      await api("/bookings", {
+      // 1. Upload reference image if selected & still local
+      let refUrl: string | null = null;
+      if (refUri && !refUri.startsWith("http")) {
+        setUploading(true);
+        try {
+          const up = await uploadImage(refUri, token!, "reference.jpg");
+          refUrl = up.url;
+        } catch (e: any) {
+          throw new Error(`Upload failed: ${e?.message ?? e}`);
+        } finally { setUploading(false); }
+      } else if (refUri) {
+        refUrl = refUri;
+      }
+
+      // 2. Create booking
+      const booking: any = await api("/bookings", {
         method: "POST",
-        body: JSON.stringify({ artist_id: artistId, date, time_slot: time, description: desc, estimated_hours: hours }),
+        body: JSON.stringify({
+          artist_id: artistId,
+          date,
+          time_slot: time,
+          description: desc,
+          estimated_hours: hours,
+          reference_image: refUrl,
+        }),
       }, token);
-      setDone(true);
-    } catch (e: any) { setErr(e?.message ?? "Booking failed"); }
-    finally { setBusy(false); }
+      setBookingId(booking.id);
+
+      // 3. Create checkout session
+      const platform = Platform.OS === "web" ? "web" : "native";
+      const session = await api<CheckoutSessionOut>("/payments/checkout-session", {
+        method: "POST",
+        body: JSON.stringify({ booking_id: booking.id, platform }),
+      }, token);
+
+      // 4. Handle checkout
+      if (session.mock) {
+        // Mock flow — confirm directly (with a small confirmation)
+        const confirmed = await new Promise<boolean>((resolve) => {
+          if (Platform.OS === "web") {
+            const ok = typeof window !== "undefined"
+              ? window.confirm(`Pay $${deposit} deposit? (mock payment — no real charge)`)
+              : true;
+            resolve(ok);
+          } else {
+            Alert.alert(
+              "Confirm Payment",
+              `Pay $${deposit} deposit? (Mock payment — real Stripe key not configured)`,
+              [
+                { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                { text: `Pay $${deposit}`, style: "default", onPress: () => resolve(true) },
+              ]
+            );
+          }
+        });
+        if (!confirmed) { setBusy(false); return; }
+        await api("/payments/mock-confirm", {
+          method: "POST",
+          body: JSON.stringify({ session_id: session.session_id }),
+        }, token);
+        setPaid(true);
+        setDone(true);
+        return;
+      }
+
+      // Real Stripe checkout via web browser
+      const redirect = Platform.OS === "web"
+        ? (typeof window !== "undefined" ? `${window.location.origin}/payment/return` : "")
+        : Linking.createURL("payment/return");
+
+      const result = await WebBrowser.openAuthSessionAsync(session.checkout_url, redirect);
+      if (result.type !== "success" || !("url" in result) || !result.url) {
+        // User cancelled or dismissed
+        setBusy(false);
+        return;
+      }
+      const parsed = Linking.parse(result.url);
+      const sid = parsed.queryParams?.session_id as string | undefined;
+      if (!sid) { setErr("Payment cancelled"); setBusy(false); return; }
+
+      const verify = await api<VerifyOut>(`/payments/verify/${encodeURIComponent(sid)}`, {}, token);
+      if (verify.paid) {
+        setPaid(true);
+        setDone(true);
+      } else {
+        setErr("Payment not completed");
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? "Booking failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!artist) {
@@ -70,7 +185,9 @@ export default function BookScreen() {
           <View style={styles.checkBox}><Icon name="check" size={48} color={colors.onBrand} /></View>
           <Text style={styles.doneTitle}>BOOKING{"\n"}CONFIRMED</Text>
           <Text style={styles.doneMeta}>{artist.name.toUpperCase()} · {date} @ {time}</Text>
-          <Text style={styles.doneNote}>DEPOSIT ${deposit} · TOTAL ~${total}</Text>
+          <Text style={styles.doneNote}>
+            {paid ? `DEPOSIT $${deposit} PAID` : `DEPOSIT $${deposit} PENDING`} · TOTAL ~${total}
+          </Text>
           <Pressable testID="done-view-bookings" onPress={() => router.replace("/(tabs)/bookings")} style={styles.doneCta}>
             <Text style={styles.doneCtaText}>VIEW MY BOOKINGS</Text>
           </Pressable>
@@ -164,6 +281,24 @@ export default function BookScreen() {
               style={styles.textarea}
             />
             <Text style={styles.hint}>MIN 6 CHARACTERS. THE ARTIST WILL FOLLOW UP TO CONFIRM DETAILS.</Text>
+
+            <View style={{ marginTop: spacing.md }}>
+              <Text style={styles.label}>REFERENCE IMAGE (OPTIONAL)</Text>
+              {refUri ? (
+                <View style={styles.refWrap}>
+                  <Image source={refUri} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  <Pressable testID="remove-ref-image" onPress={removeImage} style={styles.refRemove}>
+                    <Icon name="x" size={16} color={colors.onSurface} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable testID="pick-ref-image" onPress={pickImage} style={styles.pickBtn}>
+                  <Icon name="image" size={24} color={colors.brand} />
+                  <Text style={styles.pickText}>ADD INSPIRATION PHOTO</Text>
+                  <Text style={styles.pickSub}>SO THE ARTIST CAN PREP THE DESIGN</Text>
+                </Pressable>
+              )}
+            </View>
           </>
         )}
 
@@ -183,8 +318,16 @@ export default function BookScreen() {
             <View style={styles.summary}>
               <Text style={styles.blockTitle}>YOUR NOTES</Text>
               <Text style={styles.notesText}>{desc}</Text>
+              {refUri && (
+                <View style={styles.refPreview}>
+                  <Image source={refUri} style={StyleSheet.absoluteFill} contentFit="cover" />
+                </View>
+              )}
             </View>
-            <Text style={styles.mockNote}>*PAYMENT MOCKED — DEPOSIT WILL BE CAPTURED IN PRODUCTION.</Text>
+            <View style={styles.securedRow}>
+              <Icon name="lock" size={14} color={colors.muted} />
+              <Text style={styles.securedText}>SECURED BY STRIPE · 100% REFUNDABLE 48H BEFORE APPOINTMENT</Text>
+            </View>
             {!!err && <Text style={styles.err}>{err.toUpperCase()}</Text>}
           </>
         )}
@@ -204,11 +347,13 @@ export default function BookScreen() {
         ) : (
           <Pressable
             testID="book-confirm-button"
-            onPress={submit}
+            onPress={createBookingAndPay}
             disabled={busy}
             style={({ pressed }) => [styles.bookBtn, busy && { opacity: 0.5 }, pressed && { backgroundColor: colors.brandSecondary }]}
           >
-            <Text style={styles.bookText}>{busy ? "PROCESSING..." : `CONFIRM · PAY $${deposit}`}</Text>
+            <Text style={styles.bookText}>
+              {busy ? (uploading ? "UPLOADING..." : "PROCESSING...") : `PAY $${deposit} DEPOSIT`}
+            </Text>
             <Icon name="lock" size={18} color={colors.onBrand} />
           </Pressable>
         )}
@@ -244,8 +389,14 @@ const styles = StyleSheet.create({
   timeChip: { paddingHorizontal: spacing.lg, height: 44, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
   timeChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   timeText: { color: colors.onSurface, fontSize: 13, fontWeight: "900", letterSpacing: 1.5 },
-  textarea: { minHeight: 180, borderWidth: 2, borderColor: colors.border, color: colors.onSurface, padding: spacing.md, backgroundColor: colors.surfaceSecondary, textAlignVertical: "top", fontSize: 14, lineHeight: 20 },
+  textarea: { minHeight: 140, borderWidth: 2, borderColor: colors.border, color: colors.onSurface, padding: spacing.md, backgroundColor: colors.surfaceSecondary, textAlignVertical: "top", fontSize: 14, lineHeight: 20 },
   hint: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+  pickBtn: { borderWidth: 2, borderColor: colors.border, borderStyle: "dashed", paddingVertical: spacing.xl, alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary },
+  pickText: { color: colors.onSurface, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
+  pickSub: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  refWrap: { aspectRatio: 4 / 3, backgroundColor: colors.surfaceSecondary, borderWidth: 2, borderColor: colors.borderStrong },
+  refRemove: { position: "absolute", top: spacing.sm, right: spacing.sm, width: 32, height: 32, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(10,10,10,0.85)", borderWidth: 2, borderColor: colors.borderStrong },
+  refPreview: { aspectRatio: 16 / 9, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm },
   summary: { borderWidth: 2, borderColor: colors.borderStrong, padding: spacing.md, gap: spacing.sm },
   blockTitle: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 3, marginBottom: spacing.sm },
   sumRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
@@ -253,7 +404,8 @@ const styles = StyleSheet.create({
   sumV: { color: colors.onSurface, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   divider: { height: 2, backgroundColor: colors.border, marginVertical: spacing.sm },
   notesText: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20 },
-  mockNote: { color: colors.warning, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
+  securedRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.sm },
+  securedText: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.5, flex: 1 },
   err: { color: colors.error, fontSize: 12, fontWeight: "800", letterSpacing: 1.5 },
   stickyBar: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: colors.surface, borderTopWidth: 2, borderTopColor: colors.borderStrong, padding: spacing.md },
   bookBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.brand, paddingHorizontal: spacing.lg, paddingVertical: 16 },

@@ -46,6 +46,9 @@ export type Booking = {
   estimated_hours: number;
   deposit: number;
   status: string;
+  payment_status: string;
+  checkout_session_id?: string | null;
+  payment_intent_id?: string | null;
   created_at: string;
 };
 export type Review = {
@@ -73,3 +76,44 @@ export type Message = {
   text: string;
   created_at: string;
 };
+
+export type Featured = {
+  artist: Artist;
+  headline: string;
+  story: string;
+  deal_ends_at: string;
+  discount_pct: number;
+};
+
+export type CheckoutSessionOut = {
+  checkout_url: string;
+  session_id: string;
+  mock: boolean;
+};
+
+export type VerifyOut = {
+  paid: boolean;
+  booking_id: string;
+  payment_status: string;
+  mock?: boolean;
+};
+
+export type UploadOut = {
+  url: string;
+  path: string;
+  size: number;
+};
+
+export async function uploadImage(uri: string, token: string, filename = "reference.jpg"): Promise<UploadOut> {
+  const form = new FormData();
+  // React Native: pass { uri, name, type }
+  form.append("file", { uri, name: filename, type: "image/jpeg" } as any);
+  const res = await fetch(`${API_URL}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form as any,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as any)?.detail ?? `HTTP ${res.status}`);
+  return data as UploadOut;
+}

@@ -5,18 +5,22 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "inked",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.tattooreserve.e17qvm"
+      "bundleIdentifier": "com.emergent.tattooreserve.e17qvm",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Attach inspiration photos to your booking request"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.emergent.tattooreserve.e17qvm"
+      "package": "com.emergent.tattooreserve.e17qvm",
+      "permissions": ["READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",
@@ -39,7 +43,12 @@
       "expo-secure-store",
       "expo-web-browser",
       "expo-status-bar",
-      "@react-native-vector-icons/feather"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach inspiration photos to your booking request"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
