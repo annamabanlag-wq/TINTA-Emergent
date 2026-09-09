@@ -781,7 +781,7 @@ async def verify_payment(session_id: str, user=Depends(current_user)):
     if session.get("mode") != "payment":
         raise HTTPException(400, "Wrong mode")
     if session.get("currency") != CURRENCY or session.get("amount_total") != DEPOSIT_AMOUNT_MINOR:
-        raise HTTPException(400, "Amount mismatch")
+        raise HTTPException(400, "Amount mismat    
 
  if session.get("payment_status") == "paid":
             payment_intent = session.get("payment_intent")
