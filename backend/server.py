@@ -783,53 +783,53 @@ async def verify_payment(session_id: str, user=Depends(current_user)):
     if session.get("currency") != CURRENCY or session.get("amount_total") != DEPOSIT_AMOUNT_MINOR:
         raise HTTPException(400, "Amount mismatch")
 
-  if session.get("payment_status") == "paid":
-    payment_intent = session.get("payment_intent")
+ if session.get("payment_status") == "paid":
+            payment_intent = session.get("payment_intent")
 
-    # Calculate TINTA commission from the actual amount paid
-    amount_paid_php = int(session.get("amount_total", 0)) // 100
-    split = compute_split(amount_paid_php)
+            # Calculate TINTA commission from the actual amount paid
+            amount_paid_php = int(session.get("amount_total", 0)) // 100
+            split = compute_split(amount_paid_php)
 
-    await db.bookings.update_one(
-        {"id": booking_id, "user_id": user["id"], "payment_status": {"$ne": "paid"}},
-        {"$set": {
-            "payment_status": "paid",
-            "payment_intent_id": payment_intent,
-            "paid_at": now_iso(),
-            "amount_paid": amount_paid_php,
-            "commission_amount": split["commission"],
-            "artist_earnings": split["artist_net"],
-            "commission_pct": split["commission_pct"],
-        }}
-    )
+            await db.bookings.update_one(
+                {"id": booking_id, "user_id": user["id"], "payment_status": {"$ne": "paid"}},
+                {"$set": {
+                    "payment_status": "paid",
+                    "payment_intent_id": payment_intent,
+                    "paid_at": now_iso(),
+                    "amount_paid": amount_paid_php,
+                    "commission_amount": split["commission"],
+                    "artist_earnings": split["artist_net"],
+                    "commission_pct": split["commission_pct"],
+                }}
+            )
 
-    # Create the TINTA earnings ledger entry only once
-    await db.earnings_ledger.update_one(
-        {"booking_id": booking_id},
-        {"$setOnInsert": {
-            "id": str(uuid.uuid4()),
-            "booking_id": booking_id,
-            "artist_id": booking["artist_id"],
-            "artist_name": booking["artist_name"],
-            "user_id": booking["user_id"],
-            "gross": amount_paid_php,
-            "commission_pct": split["commission_pct"],
-            "commission": split["commission"],
-            "artist_net": split["artist_net"],
-            "payment_intent_id": payment_intent,
-            "created_at": now_iso(),
-        }},
-        upsert=True,
-    )
+            # Create the TINTA earnings ledger entry only once
+            await db.earnings_ledger.update_one(
+                {"booking_id": booking_id},
+                {"$setOnInsert": {
+                    "id": str(uuid.uuid4()),
+                    "booking_id": booking_id,
+                    "artist_id": booking["artist_id"],
+                    "artist_name": booking["artist_name"],
+                    "user_id": booking["user_id"],
+                    "gross": amount_paid_php,
+                    "commission_pct": split["commission_pct"],
+                    "commission": split["commission"],
+                    "artist_net": split["artist_net"],
+                    "payment_intent_id": payment_intent,
+                    "created_at": now_iso(),
+                }},
+                upsert=True,
+            )
 
-    return {
-        "paid": True,
-        "booking_id": booking_id,
-        "payment_status": "paid",
-        "amount_paid": amount_paid_php,
-        "commission": split["commission"],
-        "artist_earnings": split["artist_net"],
-    }
+            return {
+                "paid": True,
+                "booking_id": booking_id,
+                "payment_status": "paid",
+                "amount_paid": amount_paid_php,
+                "commission": split["commission"],
+                "artist_earnings": split["artist_net"],
+            }
     return {"paid": False, "booking_id": booking_id, "payment_status": session.get("payment_status")}
 
 
