@@ -784,11 +784,11 @@ async def verify_payment(session_id: str, user=Depends(current_user)):
         raise HTTPException(400, "Amount mismatch")    
 
  if session.get("payment_status") == "paid":
-            payment_intent = session.get("payment_intent")
+        payment_intent = session.get("payment_intent")
 
-            # Calculate TINTA commission from the actual amount paid
-            amount_paid_php = int(session.get("amount_total", 0)) // 100
-            split = compute_split(amount_paid_php)
+        # Calculate TINTA commission from the actual amount paid
+        amount_paid_php = int(session.get("amount_total", 0)) // 100
+        split = compute_split(amount_paid_php)
 
             await db.bookings.update_one(
                 {"id": booking_id, "user_id": user["id"], "payment_status": {"$ne": "paid"}},
