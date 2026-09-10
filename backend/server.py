@@ -783,7 +783,7 @@ async def verify_payment(session_id: str, user=Depends(current_user)):
     if session.get("currency") != CURRENCY or session.get("amount_total") != DEPOSIT_AMOUNT_MINOR:
         raise HTTPException(400, "Amount mismatch")    
 
- if session.get("payment_status") == "paid":
+if session.get("payment_status") == "paid":
         payment_intent = session.get("payment_intent")
 
         # Calculate TINTA commission from the actual amount paid
