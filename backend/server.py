@@ -790,7 +790,7 @@ if session.get("payment_status") == "paid":
         amount_paid_php = int(session.get("amount_total", 0)) // 100
         split = compute_split(amount_paid_php)
 
-            await db.bookings.update_one(
+        await db.bookings.update_one(
                 {"id": booking_id, "user_id": user["id"], "payment_status": {"$ne": "paid"}},
                 {"$set": {
                     "payment_status": "paid",
