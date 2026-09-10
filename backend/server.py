@@ -804,7 +804,7 @@ if session.get("payment_status") == "paid":
             )
 
             # Create the TINTA earnings ledger entry only once
-            await db.earnings_ledger.update_one(
+        await db.earnings_ledger.update_one(
                 {"booking_id": booking_id},
                 {"$setOnInsert": {
                     "id": str(uuid.uuid4()),
