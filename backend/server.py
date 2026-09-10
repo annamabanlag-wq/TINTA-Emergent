@@ -803,35 +803,36 @@ if session.get("payment_status") == "paid":
                 }}
             )
 
-            # Create the TINTA earnings ledger entry only once
+# Create the TINTA earnings ledger entry only once
         await db.earnings_ledger.update_one(
-                {"booking_id": booking_id},
-                {"$setOnInsert": {
-                    "id": str(uuid.uuid4()),
-                    "booking_id": booking_id,
-                    "artist_id": booking["artist_id"],
-                    "artist_name": booking["artist_name"],
-                    "user_id": booking["user_id"],
-                    "gross": amount_paid_php,
-                    "commission_pct": split["commission_pct"],
-                    "commission": split["commission"],
-                    "artist_net": split["artist_net"],
-                    "payment_intent_id": payment_intent,
-                    "created_at": now_iso(),
-                }},
-                upsert=True,
-            )
-
-            return {
-                "paid": True,
+            {"booking_id": booking_id},
+            {"$setOnInsert": {
+                "id": str(uuid.uuid4()),
                 "booking_id": booking_id,
-                "payment_status": "paid",
-                "amount_paid": amount_paid_php,
+                "artist_id": booking["artist_id"],
+                "artist_name": booking["artist_name"],
+                "user_id": booking["user_id"],
+                "gross": amount_paid_php,
+                "commission_pct": split["commission_pct"],
                 "commission": split["commission"],
-                "artist_earnings": split["artist_net"],
-            }
-    return {"paid": False, "booking_id": booking_id, "payment_status": session.get("payment_status")}
+                "artist_net": split["artist_net"],
+                "payment_intent_id": payment_intent,
+                "created_at": now_iso(),
+            }},
+            upsert=True,
+        )
 
+        return {
+            "paid": True,
+            "booking_id": booking_id,
+            "payment_status": "paid",
+            "amount_paid": amount_paid_php,
+            "commission": split["commission"],
+            "artist_earnings": split["artist_net"],
+        }
+
+    return {"paid": False, "booking_id": booking_id, "payment_status": session.get("payment_status")}
+    
 
 class MockConfirmIn(BaseModel):
     session_id: str
