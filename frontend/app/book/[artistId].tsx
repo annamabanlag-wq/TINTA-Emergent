@@ -478,6 +478,50 @@ if (paymentMethod === "gcash") {
   <View style={{ marginTop: 16 }}>
     <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 8 }}>
       GCash Payment
+      <Image
+  source={require("../../assets/GCash-MyQR-1209202610418.PNG.jpg")}
+  style={{
+    width: 220,
+    height: 220,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 12,
+  }}
+  resizeMode="contain"
+/>
+
+<Text
+  style={{
+    color: colors.text,
+    textAlign: "center",
+    fontWeight: "700",
+    fontSize: 16,
+    marginBottom: 4,
+  }}
+>
+  ROEBIN ENRIQUEZ
+</Text>
+
+<Text
+  style={{
+    color: colors.muted,
+    textAlign: "center",
+    marginBottom: 12,
+  }}
+>
+  GCash: 09381447214
+</Text>
+
+<Text
+  style={{
+    color: colors.text,
+    textAlign: "center",
+    fontWeight: "700",
+    marginBottom: 12,
+  }}
+>
+  Please send exactly P2,900 to the GCash account above.
+</Text>
     </Text>
 
     <Text style={{ color: colors.muted, marginBottom: 12 }}>
