@@ -1266,7 +1266,7 @@ async def admin_payments(_=Depends(require_admin)):
 # ---------- Admin GCash Payment Review ----------
 
 @api_router.get("/admin/gcash-payments")
-async def admin_gcash_payments(_: Depends(require_admin)):
+async def admin_gcash_payments(_: dict = Depends(require_admin)):
     docs = await db.bookings.find(
         {
             "payment_method": "gcash",
@@ -1282,7 +1282,7 @@ async def admin_gcash_payments(_: Depends(require_admin)):
 async def admin_review_gcash_payment(
     booking_id: str,
     body: GCashPaymentReviewIn,
-    _: Depends(require_admin),
+    _: dict = Depends(require_admin),
 ):
     booking = await db.bookings.find_one(
         {"id": booking_id},
