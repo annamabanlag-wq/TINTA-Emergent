@@ -83,7 +83,15 @@ class LoginIn(BaseModel):
     email: str
     password: str
 
+class GCashPaymentProofIn(BaseModel):
+    booking_id: str
+    reference_number: str = Field(min_length=3, max_length=100)
+    receipt_url: Optional[str] = None
 
+
+class GCashPaymentReviewIn(BaseModel):
+    approved: bool
+    admin_note: Optional[str] = Field(default=None, max_length=500)
 def _validate_email(e: str) -> str:
     e = e.strip().lower()
     if "@" not in e or "." not in e.split("@")[-1]:
