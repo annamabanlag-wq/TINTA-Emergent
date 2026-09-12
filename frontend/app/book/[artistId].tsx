@@ -574,7 +574,7 @@ if (paymentMethod === "gcash") {
         borderColor: colors.border,
         borderRadius: 10,
         padding: 12,
-        color: colors.text,
+       color: "#FFFFFF", 
         marginBottom: 10,
       }}
     />
