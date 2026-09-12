@@ -448,7 +448,47 @@ const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
                 })}
               </View>
             </View>
+{paymentMethod === "gcash" && (
+  <View style={{ marginTop: 16 }}>
+    <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 8 }}>
+      GCash Payment
+    </Text>
 
+    <Text style={{ color: colors.muted, marginBottom: 12 }}>
+      Please pay the required amount through GCash, then enter your GCash
+      reference number below.
+    </Text>
+
+    <TextInput
+      value={gcashReference}
+      onChangeText={setGcashReference}
+      placeholder="GCash Reference Number"
+      placeholderTextColor={colors.muted}
+      style={{
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 10,
+        padding: 12,
+        color: colors.text,
+        marginBottom: 10,
+      }}
+    />
+
+    <TextInput
+      value={gcashReceiptUrl}
+      onChangeText={setGcashReceiptUrl}
+      placeholder="Receipt URL (optional)"
+      placeholderTextColor={colors.muted}
+      style={{
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 10,
+        padding: 12,
+        color: colors.text,
+      }}
+    />
+  </View>
+)}
             <View style={styles.securedRow}>
               <Icon name="lock" size={14} color={colors.muted} />
               <Text style={styles.securedText}>{t("book.secured")}</Text>
