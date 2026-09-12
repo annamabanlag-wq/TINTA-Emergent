@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Alert, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../../src/session";
 import { useI18n } from "../../src/i18n";
@@ -37,7 +37,31 @@ const [gcashLoading, setGcashLoading] = useState(true);
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+const handleGcashReview = async (bookingId: string, approved: boolean) => {
+  if (!token) return;
 
+  try {
+    await adminApi.reviewGcashPayment(
+      bookingId,
+      {
+        approved,
+        admin_note: approved ? "Payment approved by admin" : "Payment rejected by admin",
+      },
+      token
+    );
+
+    Alert.alert(
+      approved ? "Payment Approved" : "Payment Rejected",
+      approved
+        ? "The GCash payment has been approved."
+        : "The GCash payment has been rejected."
+    );
+
+    await load();
+  } catch (e: any) {
+    Alert.alert("Error", e?.message ?? "Failed to review GCash payment");
+  }
+};
   const totals = rows.reduce(
     (acc, r) => {
       const amt = r.amount_paid ?? r.deposit ?? 0;
@@ -51,6 +75,86 @@ const [gcashLoading, setGcashLoading] = useState(true);
   return (
     <View style={styles.root}>
       <AdminHeader title={t("admin.payments.title")} testID="admin-payments-title" />
+      {gcashLoading ? (
+  <View style={{ padding: 16 }}>
+    <ActivityIndicator color={colors.brand} />
+  </View>
+) : gcashRows.length > 0 ? (
+  <View style={{ marginBottom: 16 }}>
+    <Text style={{ fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 10 }}>
+      GCash Payments for Verification
+    </Text>
+
+    {gcashRows.map((item) => (
+      <View
+        key={item.id}
+        style={{
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 10,
+        }}
+      >
+        <Text style={{ color: colors.text, fontWeight: "700" }}>
+          {item.artist_name}
+        </Text>
+
+        <Text style={{ color: colors.muted, marginTop: 4 }}>
+          Customer: {item.user_email}
+        </Text>
+
+        <Text style={{ color: colors.text, marginTop: 8 }}>
+          Amount: {fmtPHP(item.amount_submitted ?? item.deposit ?? 0)}
+        </Text>
+
+        <Text style={{ color: colors.text, marginTop: 4 }}>
+          GCash Reference: {item.gcash_reference_number ?? "Not provided"}
+        </Text>
+
+        {item.gcash_receipt_url ? (
+          <Text style={{ color: colors.brand, marginTop: 4 }}>
+            Receipt: {item.gcash_receipt_url}
+          </Text>
+        ) : null}
+
+        <View style={{ flexDirection: "row", marginTop: 12 }}>
+          <TouchableOpacity
+            onPress={() => handleGcashReview(item.id, true)}
+            style={{
+              flex: 1,
+              padding: 12,
+              borderRadius: 10,
+              marginRight: 6,
+              alignItems: "center",
+              backgroundColor: colors.success,
+            }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "700" }}>
+              APPROVE
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => handleGcashReview(item.id, false)}
+            style={{
+              flex: 1,
+              padding: 12,
+              borderRadius: 10,
+              marginLeft: 6,
+              alignItems: "center",
+              backgroundColor: colors.warning,
+            }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "700" }}>
+              REJECT
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    ))}
+  </View>
+) : null}
       <View style={styles.totalsRow}>
         <View style={styles.totalBox}>
           <Text style={styles.tLabel}>PAID</Text>
