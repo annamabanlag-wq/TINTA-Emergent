@@ -51,6 +51,8 @@ export default function BookScreen() {
   const [paymentMethod, setPaymentMethod] = useState<"card" | "gcash" | "maya">("card");
   const [homeService, setHomeService] = useState(false);
   const [serviceAddress, setServiceAddress] = useState("");
+  const [gcashReference, setGcashReference] = useState("");
+const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
 
   useEffect(() => {
     (async () => {
