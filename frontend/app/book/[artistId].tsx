@@ -143,7 +143,33 @@ const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
         }),
       }, token);
       setBookingId(booking.id);
+// 3. Manual GCash payment submission
+if (paymentMethod === "gcash") {
+  if (!gcashReference.trim()) {
+    throw new Error("Please enter your GCash reference number.");
+  }
 
+  const gcashResult: any = await api("/payments/gcash/submit", {
+    method: "POST",
+    body: JSON.stringify({
+      booking_id: booking.id,
+      reference_number: gcashReference.trim(),
+      receipt_url: gcashReceiptUrl.trim() || null,
+    }),
+    token,
+  });
+
+  setPaid(false);
+  setDone(true);
+  setBusy(false);
+
+  Alert.alert(
+    "GCash Payment Submitted",
+    "Your payment is now pending verification. We will confirm your booking after the payment is reviewed."
+  );
+
+  return;
+}
       // 3. Create checkout session (pass deep-link return URL so native Stripe can round-trip)
       const platform = Platform.OS === "web" ? "web" : "native";
       const return_url = Platform.OS === "web"
