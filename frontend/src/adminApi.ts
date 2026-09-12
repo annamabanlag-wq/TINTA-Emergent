@@ -79,7 +79,14 @@ export type CommissionRow = {
   commission: number;
   artist_net: number;
 };
-
+export type GCashPayment = AdminBooking & {
+  payment_method?: string;
+  gcash_reference_number?: string;
+  gcash_receipt_url?: string;
+  gcash_review_status?: string;
+  gcash_admin_note?: string;
+  amount_submitted?: number;
+};
 export type Payout = {
   id: string;
   artist_id: string;
@@ -116,6 +123,18 @@ export const adminApi = {
   refundBooking: (id: string, token: string) =>
     api<{ refunded: boolean }>(`/admin/bookings/${id}/refund`, { method: "POST" }, token),
   payments: (token: string) => api<AdminBooking[]>("/admin/payments", {}, token),
+  gcashPayments: (token: string) =>
+  api<GCashPayment[]>("/admin/gcash-payments", {}, token),
+
+reviewGcashPayment: (
+  bookingId: string,
+  data: { approved: boolean; admin_note?: string },
+  token: string
+) =>
+  api(`/admin/gcash-payments/${bookingId}/review`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  }, token),
   commissions: (token: string) => api<CommissionRow[]>("/admin/commissions", {}, token),
   payouts: (token: string) => api<Payout[]>("/admin/payouts", {}, token),
   createPayout: (artist_id: string, note: string, token: string) =>
