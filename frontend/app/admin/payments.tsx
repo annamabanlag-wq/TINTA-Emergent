@@ -5,7 +5,7 @@ import { useSession } from "../../src/session";
 import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
 import AdminHeader from "../../src/AdminHeader";
-import { adminApi, AdminBooking } from "../../src/adminApi";
+import { adminApi, AdminBooking, GCashPayment } from "../../src/adminApi";
 import { fmtPHP } from "../../src/currency";
 
 export default function AdminPaymentsScreen() {
@@ -15,17 +15,24 @@ export default function AdminPaymentsScreen() {
   const [rows, setRows] = useState<AdminBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
+const [gcashRows, setGcashRows] = useState<GCashPayment[]>([]);
+const [gcashLoading, setGcashLoading] = useState(true);
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await adminApi.payments(token);
-      setRows(data);
-    } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Failed");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const data = await adminApi.payments(token);
+  setRows(data);
+
+  setGcashLoading(true);
+  const gcashData = await adminApi.gcashPayments(token);
+  setGcashRows(gcashData);
+} catch (e: any) {
+  Alert.alert("Error", e?.message ?? "Failed");
+} finally {
+  setGcashLoading(false);
+  setLoading(false);
+  setRefreshing(false);
+}
     }
   }, [token]);
 
