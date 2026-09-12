@@ -127,7 +127,10 @@ export async function uploadImage(uri: string, token: string, filename = "refere
   // React Native: pass { uri, name, type }
   if (typeof window !== "undefined") {
   const blob = await (await fetch(uri)).blob();
-  form.append("file", blob, filename);
+  form.append(
+  "file",
+  new File([blob], filename, { type: blob.type || "image/jpeg" })
+);
 } else {
   form.append("file", { uri, name: filename, type: "image/jpeg" } as any);
 }
