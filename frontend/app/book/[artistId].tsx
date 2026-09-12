@@ -479,7 +479,7 @@ if (paymentMethod === "gcash") {
     <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 8 }}>
       GCash Payment
       <Image
-  <Image
+  
   source={require("../../assets/GCash-MyQR-12092026210418.PNG.jpg")}
   style={{
     width: 220,
