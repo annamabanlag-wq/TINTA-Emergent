@@ -523,15 +523,7 @@ if (paymentMethod === "gcash") {
 >
   Please send exactly P2,900 to the GCash account above.
 </Text>
-  style={{
-    width: 220,
-    height: 220,
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 12,
-  }}
-  resizeMode="contain"
-/>
+  
 
 <Text
   style={{
