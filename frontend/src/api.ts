@@ -132,6 +132,11 @@ export async function uploadImage(uri: string, token: string, filename = "refere
     body: form as any,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as any)?.detail ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+  const detail = (data as any)?.detail;
+  throw new Error(
+    typeof detail === "string" ? detail : JSON.stringify(detail ?? `HTTP ${res.status}`)
+  );
+}
   return data as UploadOut;
 }
