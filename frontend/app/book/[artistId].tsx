@@ -115,7 +115,7 @@ const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
     setErr(""); setBusy(true);
     try {
       // 1. Upload reference image if selected & still local
-      let refUrl: string | null = null;
+      let refUrl: string | null = refUri;
       if (refUri && !refUri.startsWith("http")) {
         setUploading(true);
         try {
