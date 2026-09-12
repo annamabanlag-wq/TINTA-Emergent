@@ -33,8 +33,8 @@ const [gcashLoading, setGcashLoading] = useState(true);
   setLoading(false);
   setRefreshing(false);
 }
-    }
-  }, [token]);
+
+}, [token]);
 
   useEffect(() => { load(); }, [load]);
 const handleGcashReview = async (bookingId: string, approved: boolean) => {
