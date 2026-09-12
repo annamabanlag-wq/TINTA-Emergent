@@ -896,7 +896,60 @@ async def mock_confirm(body: MockConfirmIn, user=Depends(current_user)):
     )
     return {"paid": True, "booking_id": booking["id"]}
 
+# ---------- Manual GCash Payment ----------
 
+@api_router.post("/payments/gcash/submit")
+async def submit_gcash_payment(
+    body: GCashPaymentProofIn,
+    user=Depends(current_user),
+):
+    booking = await db.bookings.find_one(
+        {
+            "id": body.booking_id,
+            "user_id": user["id"],
+        },
+        {"_id": 0},
+    )
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.get("payment_status") == "paid":
+        raise HTTPException(status_code=400, detail="Booking is already paid")
+
+    total = int(booking.get("deposit", 0)) + int(
+        booking.get("service_fee", 0)
+    )
+
+    if total <= 0:
+        total = DEPOSIT_AMOUNT_MAJOR
+
+    await db.bookings.update_one(
+        {
+            "id": body.booking_id,
+            "user_id": user["id"],
+        },
+        {
+            "$set": {
+                "payment_method": "gcash",
+                "gcash_reference_number": body.reference_number.strip(),
+                "gcash_receipt_url": body.receipt_url,
+                "gcash_review_status": "pending",
+                "gcash_submitted_at": now_iso(),
+                "gcash_admin_note": None,
+                "amount_submitted": total,
+                "payment_status": "unpaid",
+            }
+        },
+    )
+
+    return {
+        "submitted": True,
+        "status": "pending_verification",
+        "booking_id": booking["id"],
+        "amount": total,
+        "message": "GCash payment submitted for verification",
+    }
 # ---------- Favorites ----------
 class FavoriteToggleIn(BaseModel):
     artist_id: str
