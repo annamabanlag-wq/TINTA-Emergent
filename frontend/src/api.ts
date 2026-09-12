@@ -125,7 +125,12 @@ export type UploadOut = {
 export async function uploadImage(uri: string, token: string, filename = "reference.jpg"): Promise<UploadOut> {
   const form = new FormData();
   // React Native: pass { uri, name, type }
+  if (typeof window !== "undefined") {
+  const blob = await (await fetch(uri)).blob();
+  form.append("file", blob, filename);
+} else {
   form.append("file", { uri, name: filename, type: "image/jpeg" } as any);
+}
   const res = await fetch(`${API_URL}/upload`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
