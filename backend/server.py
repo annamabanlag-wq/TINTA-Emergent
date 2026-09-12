@@ -1263,7 +1263,133 @@ async def admin_payments(_=Depends(require_admin)):
     ).sort("paid_at", -1).to_list(500)
     return docs
 
+# ---------- Admin GCash Payment Review ----------
 
+@api_router.get("/admin/gcash-payments")
+async def admin_gcash_payments(_: Depends(require_admin)):
+    docs = await db.bookings.find(
+        {
+            "payment_method": "gcash",
+            "gcash_review_status": "pending",
+        },
+        {"_id": 0},
+    ).sort("gcash_submitted_at", -1).to_list(500)
+
+    return docs
+
+
+@api_router.post("/admin/gcash-payments/{booking_id}/review")
+async def admin_review_gcash_payment(
+    booking_id: str,
+    body: GCashPaymentReviewIn,
+    _: Depends(require_admin),
+):
+    booking = await db.bookings.find_one(
+        {"id": booking_id},
+        {"_id": 0},
+    )
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.get("payment_method") != "gcash":
+        raise HTTPException(
+            status_code=400,
+            detail="This booking is not a GCash payment",
+        )
+
+    if booking.get("payment_status") == "paid":
+        return {
+            "reviewed": True,
+            "approved": True,
+            "booking_id": booking_id,
+            "message": "Payment is already approved",
+        }
+
+    if not body.approved:
+        await db.bookings.update_one(
+            {"id": booking_id},
+            {
+                "$set": {
+                    "gcash_review_status": "rejected",
+                    "gcash_admin_note": body.admin_note,
+                    "gcash_reviewed_at": now_iso(),
+                    "payment_status": "unpaid",
+                }
+            },
+        )
+
+        return {
+            "reviewed": True,
+            "approved": False,
+            "booking_id": booking_id,
+            "message": "GCash payment rejected",
+        }
+
+    total = int(
+        booking.get("amount_submitted")
+        or booking.get("deposit", 0)
+    )
+
+    if booking.get("service_fee"):
+        total = int(booking.get("deposit", 0)) + int(
+            booking.get("service_fee", 0)
+        )
+
+    if total <= 0:
+        total = DEPOSIT_AMOUNT_MAJOR
+
+    split = compute_split(total)
+    payment_id = f"gcash_manual_{uuid.uuid4().hex}"
+
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {
+            "$set": {
+                "payment_status": "paid",
+                "payment_intent_id": payment_id,
+                "paid_at": now_iso(),
+                "amount_paid": total,
+                "commission_amount": split["commission"],
+                "artist_earnings": split["artist_net"],
+                "commission_pct": split["commission_pct"],
+                "gcash_review_status": "approved",
+                "gcash_admin_note": body.admin_note,
+                "gcash_reviewed_at": now_iso(),
+            }
+        },
+    )
+
+    await db.earnings_ledger.update_one(
+        {"booking_id": booking_id},
+        {
+            "$setOnInsert": {
+                "id": str(uuid.uuid4()),
+                "booking_id": booking_id,
+                "artist_id": booking["artist_id"],
+                "artist_name": booking["artist_name"],
+                "user_id": booking["user_id"],
+                "gross": total,
+                "commission_pct": split["commission_pct"],
+                "commission": split["commission"],
+                "artist_net": split["artist_net"],
+                "payment_intent_id": payment_id,
+                "status": "pending_payout",
+                "created_at": now_iso(),
+            }
+        },
+        upsert=True,
+    )
+
+    return {
+        "reviewed": True,
+        "approved": True,
+        "booking_id": booking_id,
+        "amount": total,
+        "commission": split["commission"],
+        "artist_net": split["artist_net"],
+        "message": "GCash payment approved",
+    }
 @api_router.get("/admin/commissions")
 async def admin_commissions(_=Depends(require_admin)):
     # Group per artist
