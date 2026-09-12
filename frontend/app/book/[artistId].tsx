@@ -122,7 +122,11 @@ const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
           const up = await uploadImage(refUri, token!, "reference.jpg");
           refUrl = up.url;
         } catch (e: any) {
-          throw new Error(`Upload failed: ${e?.message ?? e}`);
+          throw new Error(
+  `Upload failed: ${
+    e?.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e))
+  }`
+);
         } finally { setUploading(false); }
       } else if (refUri) {
         refUrl = refUri;
