@@ -122,11 +122,11 @@ export type UploadOut = {
   size: number;
 };
 
-export async function uploadImage(uri: string, token: string, filename = "reference.jpg"): Promise<UploadOut> {
+export async function uploadImage(uri: string, token: string, filename = "reference.jpg", file?: File): Promise<UploadOut> {
   const form = new FormData();
   // React Native: pass { uri, name, type }
   if (typeof window !== "undefined") {
-  const blob = await (await fetch(uri)).blob();
+  const blob = file ?? await (await fetch(uri)).blob();
   form.append(
   "file",
   new File([blob], filename, { type: blob.type || "image/jpeg" })
