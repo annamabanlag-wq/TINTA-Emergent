@@ -39,7 +39,7 @@ export default function BookScreen() {
   const [time, setTime] = useState<string>("");
   const [hours, setHours] = useState<number>(2);
   const [desc, setDesc] = useState("");
-  const [refUri, setRefUri] = useState<string | null>(null); // local URI or remote URL
+  const [refUri, setRefUri] = useState<string | null>(null); // local URI or remote URL const [refFile, setRefFile] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -101,9 +101,14 @@ const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
         quality: 0.7,
         allowsEditing: false,
       });
-      if (result.canceled) return;
-      const uri = result.assets?.[0]?.uri;
-      if (uri) setRefUri(uri);
+      const asset = result.assets?.[0];
+const uri = asset?.uri;
+
+if (uri) {
+  setRefUri(uri);
+  setRefFile(asset?.file ?? null);
+}
+      
     } catch (e: any) {
       setErr(e?.message ?? "Could not pick image");
     }
