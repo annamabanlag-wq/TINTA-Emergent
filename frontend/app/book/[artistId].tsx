@@ -39,7 +39,8 @@ export default function BookScreen() {
   const [time, setTime] = useState<string>("");
   const [hours, setHours] = useState<number>(2);
   const [desc, setDesc] = useState("");
-  const [refUri, setRefUri] = useState<string | null>(null); // local URI or remote URL const [refFile, setRefFile] = useState<any>(null);
+  const [refUri, setRefUri] = useState<string | null>(null); // local URI or remote URL
+const [refFile, setRefFile] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
