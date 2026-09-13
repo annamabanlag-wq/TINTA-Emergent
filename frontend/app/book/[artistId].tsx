@@ -121,21 +121,28 @@ if (uri) {
     try {
       // 1. Upload reference image if selected & still local
       let refUrl: string | null = refUri;
-      if (refUri && !refUri.startsWith("http")) {
-        setUploading(true);
-        try {
-          const up = await uploadImage(refUri, token!, "reference.jpg");
-          refUrl = up.url;
-        } catch (e: any) {
-          throw new Error(
-  `Upload failed: ${
-    e?.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e))
-  }`
-);
-        } finally { setUploading(false); }
-      } else if (refUri) {
-        refUrl = refUri;
-      }
+      if (refUrl && !refUrl.startsWith("http")) {
+  setUploading(true);
+  try {
+    const up = await uploadImage(
+      refUrl,
+      token!,
+      "reference.jpg",
+      refFile ?? undefined
+    );
+    refUrl = up.url;
+  } catch (e: any) {
+    throw new Error(
+      `Upload failed: ${
+        e?.message ?? (typeof e === "object" ? JSON.stringify(e) : String(e))
+      }`
+    );
+  } finally {
+    setUploading(false);
+  }
+} else if (refUrl) {
+  refUrl = refUrl;
+}
 
       // 2. Create booking
       const booking: any = await api("/bookings", {
