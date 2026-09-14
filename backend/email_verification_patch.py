@@ -6,6 +6,7 @@ import ssl
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
+from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
@@ -107,7 +108,7 @@ def install(server_module):
                 raise HTTPException(503, "We could not send the verification email. Please try again.")
             return {"sent": True, "message": "A new verification code was sent."}
 
-    # Wrap the actual routes on the already-created app, not api_router.
+    # Wrap the actual route on the already-created app, not api_router.
     for route in getattr(app, "routes", []):
         if getattr(route, "path", None) == "/api/auth/register" and getattr(route, "methods", set()) == {"POST"}:
             original_register = route.endpoint
@@ -117,6 +118,11 @@ def install(server_module):
             async def verified_register(body):
                 if not _smtp_configured():
                     raise HTTPException(503, "Email verification is not configured yet. Please try again shortly.")
+                try:
+                    validated = validate_email(body.email, check_deliverability=True)
+                    body.email = validated.normalized
+                except EmailNotValidError:
+                    raise HTTPException(422, "Please enter a real, reachable email address.")
                 result = await original_register(body)
                 code, expires = _new_code()
                 await server_module.db.users.update_one(
