@@ -1,4 +1,4 @@
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://tinta-backend.onrender.com";
 export const API_URL = `${BASE}/api`;
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
