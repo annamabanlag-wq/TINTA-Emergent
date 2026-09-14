@@ -47,14 +47,15 @@ export default function SignUp() {
 
         {!!err && <Text style={styles.err} testID="signup-error">{err.toUpperCase()}</Text>}
 
-        <Pressable
-          testID="signup-submit-button"
-          onPress={submit}
-          disabled={disabled}
-          style={({ pressed }) => [styles.cta, disabled && styles.ctaDisabled, pressed && styles.ctaPressed]}
-        >
+        <Pressable testID="signup-submit-button" onPress={submit} disabled={disabled} style={({ pressed }) => [styles.cta, disabled && styles.ctaDisabled, pressed && styles.ctaPressed]}>
           <Text style={styles.ctaText}>{busy ? "CREATING..." : "CREATE ACCOUNT"}</Text>
         </Pressable>
+
+        <Link href="/artist/apply" asChild>
+          <Pressable style={styles.artistBtn}>
+            <Text style={styles.artistText}>ARE YOU AN ARTIST? APPLY HERE →</Text>
+          </Pressable>
+        </Link>
 
         <View style={styles.divider} />
         <Link href="/(auth)/sign-in" asChild>
@@ -73,20 +74,14 @@ const styles = StyleSheet.create({
   title: { color: colors.onSurface, fontSize: 48, fontWeight: "900", letterSpacing: 2, lineHeight: 50 },
   subtitle: { color: colors.brand, fontSize: 12, fontWeight: "800", letterSpacing: 3, marginBottom: spacing.lg },
   label: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: spacing.sm },
-  input: {
-    backgroundColor: colors.surfaceSecondary,
-    borderWidth: 2,
-    borderColor: colors.border,
-    color: colors.onSurface,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    fontSize: 16,
-  },
+  input: { backgroundColor: colors.surfaceSecondary, borderWidth: 2, borderColor: colors.border, color: colors.onSurface, paddingVertical: 14, paddingHorizontal: spacing.md, fontSize: 16 },
   err: { color: colors.error, fontSize: 12, fontWeight: "800", letterSpacing: 1.5, marginTop: spacing.xs },
   cta: { backgroundColor: colors.brand, paddingVertical: 18, alignItems: "center", marginTop: spacing.lg, borderWidth: 2, borderColor: colors.brand },
   ctaDisabled: { opacity: 0.5 },
   ctaPressed: { backgroundColor: colors.brandSecondary },
   ctaText: { color: colors.onBrand, fontSize: 16, fontWeight: "900", letterSpacing: 3 },
+  artistBtn: { paddingVertical: 14, alignItems: "center", borderWidth: 2, borderColor: colors.brand, marginTop: spacing.sm },
+  artistText: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 1.5 },
   divider: { height: 2, backgroundColor: colors.divider, marginVertical: spacing.lg },
   secondaryBtn: { paddingVertical: spacing.md, alignItems: "center", borderWidth: 2, borderColor: colors.borderStrong },
   secondaryText: { color: colors.onSurface, fontSize: 13, fontWeight: "800", letterSpacing: 2 },
