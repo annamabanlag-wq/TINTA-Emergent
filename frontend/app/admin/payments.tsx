@@ -16,56 +16,58 @@ export default function AdminPaymentsScreen() {
   const [rows, setRows] = useState<AdminBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-const [gcashRows, setGcashRows] = useState<GCashPayment[]>([]);
-const [gcashLoading, setGcashLoading] = useState(true);
+  const [gcashRows, setGcashRows] = useState<GCashPayment[]>([]);
+  const [gcashLoading, setGcashLoading] = useState(true);
   const [viewerVisible, setViewerVisible] = useState(false);
-const [viewerImages, setViewerImages] = useState<string[]>([]);
-const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerImages, setViewerImages] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
   const load = useCallback(async () => {
     if (!token) return;
     try {
-  const data = await adminApi.payments(token);
-  setRows(data);
+      const data = await adminApi.payments(token);
+      setRows(data);
 
-  setGcashLoading(true);
-  const gcashData = await adminApi.gcashPayments(token);
-  setGcashRows(gcashData);
-} catch (e: any) {
-  Alert.alert("Error", e?.message ?? "Failed");
-} finally {
-  setGcashLoading(false);
-  setLoading(false);
-  setRefreshing(false);
-}
-
-}, [token]);
+      setGcashLoading(true);
+      const gcashData = await adminApi.gcashPayments(token);
+      setGcashRows(gcashData);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Failed");
+    } finally {
+      setGcashLoading(false);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [token]);
 
   useEffect(() => { load(); }, [load]);
-const handleGcashReview = async (bookingId: string, approved: boolean) => {
-  if (!token) return;
 
-  try {
-    await adminApi.reviewGcashPayment(
-      bookingId,
-      {
-        approved,
-        admin_note: approved ? "Payment approved by admin" : "Payment rejected by admin",
-      },
-      token
-    );
+  const handleGcashReview = async (bookingId: string, approved: boolean) => {
+    if (!token) return;
 
-    Alert.alert(
-      approved ? "Payment Approved" : "Payment Rejected",
-      approved
-        ? "The GCash payment has been approved."
-        : "The GCash payment has been rejected."
-    );
+    try {
+      await adminApi.reviewGcashPayment(
+        bookingId,
+        {
+          approved,
+          admin_note: approved ? "Payment approved by admin" : "Payment rejected by admin",
+        },
+        token
+      );
 
-    await load();
-  } catch (e: any) {
-    Alert.alert("Error", e?.message ?? "Failed to review GCash payment");
-  }
-};
+      Alert.alert(
+        approved ? "Payment Approved" : "Payment Rejected",
+        approved
+          ? "The GCash payment has been approved."
+          : "The GCash payment has been rejected."
+      );
+
+      await load();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Failed to review GCash payment");
+    }
+  };
+
   const totals = rows.reduce(
     (acc, r) => {
       const amt = r.amount_paid ?? r.deposit ?? 0;
@@ -80,93 +82,94 @@ const handleGcashReview = async (bookingId: string, approved: boolean) => {
     <View style={styles.root}>
       <AdminHeader title={t("admin.payments.title")} testID="admin-payments-title" />
       {gcashLoading ? (
-  <View style={{ padding: 16 }}>
-    <ActivityIndicator color={colors.brand} />
-  </View>
-) : gcashRows.length > 0 ? (
-  <View style={{ marginBottom: 16 }}>
-    <Text style={{ fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 10 }}>
-      GCash Payments for Verification
-    </Text>
-
-    {gcashRows.map((item) => (
-      <View
-        key={item.id}
-        style={{
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: 12,
-          padding: 14,
-          marginBottom: 10,
-        }}
-      >
-        <Text style={{ color: colors.text, fontWeight: "700" }}>
-          {item.artist_name}
-        </Text>
-
-        <Text style={{ color: colors.muted, marginTop: 4 }}>
-          Customer: {item.user_email}
-        </Text>
-
-        <Text style={{ color: colors.text, marginTop: 8 }}>
-          Amount: {fmtPHP(item.amount_submitted ?? item.deposit ?? 0)}
-        </Text>
-
-        <Text style={{ color: colors.text, marginTop: 4 }}>
-          GCash Reference: {item.gcash_reference_number ?? "Not provided"}
-        </Text>
-
-        {item.gcash_receipt_url ? (
-  <TouchableOpacity
-    onPress={() => {
-      setViewerImages([item.gcash_receipt_url!]);
-      setViewerIndex(0);
-      setViewerVisible(true);
-    }}
-  >
-    <Text style={{ color: colors.brand, marginTop: 4 }}>
-      📷 View GCash Receipt
-    </Text>
-  </TouchableOpacity>
-) : null}
-
-        <View style={{ flexDirection: "row", marginTop: 12 }}>
-          <TouchableOpacity
-            onPress={() => handleGcashReview(item.id, true)}
-            style={{
-              flex: 1,
-              padding: 12,
-              borderRadius: 10,
-              marginRight: 6,
-              alignItems: "center",
-              backgroundColor: colors.success,
-            }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>
-              APPROVE
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => handleGcashReview(item.id, false)}
-            style={{
-              flex: 1,
-              padding: 12,
-              borderRadius: 10,
-              marginLeft: 6,
-              alignItems: "center",
-              backgroundColor: colors.warning,
-            }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "700" }}>
-              REJECT
-            </Text>
-          </TouchableOpacity>
+        <View style={{ padding: 16 }}>
+          <ActivityIndicator color={colors.brand} />
         </View>
-      </View>
-    ))}
-  </View>
-) : null}
+      ) : gcashRows.length > 0 ? (
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 18, fontWeight: "700", color: colors.onSurface, marginBottom: 10 }}>
+            GCash Payments for Verification
+          </Text>
+
+          {gcashRows.map((item) => (
+            <View
+              key={item.id}
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 12,
+                padding: 14,
+                marginBottom: 10,
+              }}
+            >
+              <Text style={{ color: colors.onSurface, fontWeight: "700" }}>
+                {item.artist_name}
+              </Text>
+
+              <Text style={{ color: colors.muted, marginTop: 4 }}>
+                Customer: {item.user_email}
+              </Text>
+
+              <Text style={{ color: colors.onSurface, marginTop: 8 }}>
+                Amount: {fmtPHP(item.amount_submitted ?? item.deposit ?? 0)}
+              </Text>
+
+              <Text style={{ color: colors.onSurface, marginTop: 4 }}>
+                GCash Reference: {item.gcash_reference_number ?? "Not provided"}
+              </Text>
+
+              {item.gcash_receipt_url ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setViewerImages([item.gcash_receipt_url!]);
+                    setViewerIndex(0);
+                    setViewerVisible(true);
+                  }}
+                >
+                  <Text style={{ color: colors.brand, marginTop: 4 }}>
+                    📷 View GCash Receipt
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <View style={{ flexDirection: "row", marginTop: 12 }}>
+                <TouchableOpacity
+                  onPress={() => handleGcashReview(item.id, true)}
+                  style={{
+                    flex: 1,
+                    padding: 12,
+                    borderRadius: 10,
+                    marginRight: 6,
+                    alignItems: "center",
+                    backgroundColor: colors.success,
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>
+                    APPROVE
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => handleGcashReview(item.id, false)}
+                  style={{
+                    flex: 1,
+                    padding: 12,
+                    borderRadius: 10,
+                    marginLeft: 6,
+                    alignItems: "center",
+                    backgroundColor: colors.warning,
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>
+                    REJECT
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.totalsRow}>
         <View style={styles.totalBox}>
           <Text style={styles.tLabel}>PAID</Text>
