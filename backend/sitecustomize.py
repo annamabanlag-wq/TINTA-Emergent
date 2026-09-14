@@ -23,6 +23,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_email_validation(module)
             from email_verification_patch import install as install_email_verification
             install_email_verification(module)
+            from email_verification_route_fix import install as install_email_route_fix
+            install_email_route_fix(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
