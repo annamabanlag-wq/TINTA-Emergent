@@ -1,17 +1,15 @@
 """Require mailbox verification for newly registered TINTA accounts."""
 import os
 import secrets
-import smtplib
-import ssl
+import requests
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 CODE_TTL_MINUTES = 15
-RESEND_SMTP_HOST = "smtp.resend.com"
+RESEND_API_URL = "https://api.resend.com/emails"
 
 
 class VerifyEmailIn(BaseModel):
@@ -30,25 +28,29 @@ def _smtp_configured() -> bool:
 def _send_code(email: str, code: str) -> None:
     api_key = os.environ["RESEND_API_KEY"]
     sender = os.environ["EMAIL_FROM"]
-    port = int(os.getenv("RESEND_SMTP_PORT", "465"))
-    msg = EmailMessage()
-    msg["Subject"] = "Verify your TINTA account"
-    msg["From"] = sender
-    msg["To"] = email
-    msg.set_content(
-        f"Your TINTA verification code is: {code}\n\n"
-        f"This code expires in {CODE_TTL_MINUTES} minutes.\n"
-        "If you did not create a TINTA account, you can ignore this email."
+    response = requests.post(
+        RESEND_API_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": sender,
+            "to": [email],
+            "subject": "Verify your TINTA account",
+            "text": (
+                f"Your TINTA verification code is: {code}\n\n"
+                f"This code expires in {CODE_TTL_MINUTES} minutes.\n"
+                "If you did not create a TINTA account, you can ignore this email."
+            ),
+        },
+        timeout=20,
     )
-    if port in (465, 2465):
-        with smtplib.SMTP_SSL(RESEND_SMTP_HOST, port, context=ssl.create_default_context(), timeout=15) as smtp:
-            smtp.login("resend", api_key)
-            smtp.send_message(msg)
-    else:
-        with smtplib.SMTP(RESEND_SMTP_HOST, port, timeout=15) as smtp:
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.login("resend", api_key)
-            smtp.send_message(msg)
+    if not response.ok:
+        # Do not log the API key or verification code. The response body from
+        # Resend is useful for diagnosing sender/domain configuration failures.
+        detail = response.text[:300]
+        raise RuntimeError(f"Resend API {response.status_code}: {detail}")
 
 
 def _new_code():
@@ -58,9 +60,6 @@ def _new_code():
 def install(server_module):
     app = server_module.app
 
-    # These routes must be registered on the already-created FastAPI app.
-    # Adding them only to api_router here is too late because server.py has
-    # already included that router by the time this startup hook runs.
     if not any(getattr(r, "path", None) == "/api/auth/verify-email" for r in app.routes):
         @app.post("/api/auth/verify-email")
         async def verify_email(body: VerifyEmailIn):
@@ -104,11 +103,11 @@ def install(server_module):
             )
             try:
                 _send_code(email, code)
-            except Exception:
+            except Exception as exc:
+                print(f"TINTA verification email send failed: {type(exc).__name__}: {exc}")
                 raise HTTPException(503, "We could not send the verification email. Please try again.")
             return {"sent": True, "message": "A new verification code was sent."}
 
-    # Wrap the actual route on the already-created app, not api_router.
     for route in getattr(app, "routes", []):
         if getattr(route, "path", None) == "/api/auth/register" and getattr(route, "methods", set()) == {"POST"}:
             original_register = route.endpoint
@@ -131,7 +130,8 @@ def install(server_module):
                 )
                 try:
                     _send_code(result.user.email, code)
-                except Exception:
+                except Exception as exc:
+                    print(f"TINTA verification email send failed: {type(exc).__name__}: {exc}")
                     await server_module.db.users.delete_one({"id": result.user.id})
                     raise HTTPException(503, "We could not send the verification email. Please try again.")
                 return {"access_token": "", "token_type": "bearer", "user": result.user}
