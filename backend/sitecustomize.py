@@ -1,7 +1,4 @@
-"""Small startup hook for the existing Render uvicorn target.
-The main server remains untouched; this imports the optional artist application routes
-immediately after the server module is loaded.
-"""
+"""Small startup hook for the existing Render uvicorn target."""
 import importlib.abc
 import importlib.machinery
 import sys
@@ -20,10 +17,12 @@ class _ServerLoader(importlib.abc.Loader):
     def exec_module(self, module):
         self.loader.exec_module(module)
         try:
-            from artist_applications_patch import install
-            install(module)
+            from artist_applications_patch import install as install_artist
+            install_artist(module)
+            from email_validation_patch import install as install_email_validation
+            install_email_validation(module)
         except Exception as exc:
-            print(f"Artist application routes not installed: {exc}")
+            print(f"TINTA startup patches not installed: {exc}")
             raise
 
 
