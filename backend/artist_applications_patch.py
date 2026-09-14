@@ -1,0 +1,90 @@
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import uuid
+
+
+def install(server):
+    app = server.app
+    db = server.db
+    current_user = server.current_user
+    require_admin = server.require_admin
+    now_iso = server.now_iso
+
+    class ArtistApplicationIn(BaseModel):
+        name: str = Field(min_length=2, max_length=80)
+        handle: str = Field(min_length=2, max_length=80)
+        city: str = Field(min_length=2, max_length=100)
+        studio: str = Field(min_length=2, max_length=120)
+        address: str = ""
+        styles: List[str] = []
+        bio: str = Field(min_length=10, max_length=1000)
+        bio_tl: str = ""
+        rate_per_hour: int = Field(ge=1, le=1000000)
+        avatar: str = ""
+        hero: str = ""
+        portfolio: List[str] = []
+        home_service_available: bool = False
+        home_service_fee: int = Field(default=0, ge=0, le=1000000)
+        phone: str = ""
+        service_area: str = ""
+
+    class ArtistApplicationReviewIn(BaseModel):
+        approved: bool
+        admin_note: Optional[str] = Field(default=None, max_length=500)
+
+    async def apply(body: ArtistApplicationIn, user=__import__('fastapi').Depends(current_user)):
+        existing = await db.artist_applications.find_one({"user_id": user["id"], "status": "pending"}, {"_id": 0})
+        if existing:
+            return existing
+        approved = await db.artist_applications.find_one({"user_id": user["id"], "status": "approved"}, {"_id": 0})
+        if approved:
+            raise HTTPException(409, "Artist application already approved")
+        app_id = str(uuid.uuid4())
+        doc = body.model_dump() if hasattr(body, "model_dump") else body.dict()
+        doc.update({"id": app_id, "user_id": user["id"], "email": user["email"], "status": "pending", "admin_note": None, "submitted_at": now_iso(), "reviewed_at": None})
+        await db.artist_applications.insert_one(doc)
+        return doc
+
+    async def my_application(user=__import__('fastapi').Depends(current_user)):
+        doc = await db.artist_applications.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("submitted_at", -1)])
+        return doc or {"status": "not_started"}
+
+    async def admin_list(_=__import__('fastapi').Depends(require_admin)):
+        return await db.artist_applications.find({}, {"_id": 0}).sort("submitted_at", -1).to_list(500)
+
+    async def review(application_id: str, body: ArtistApplicationReviewIn, _=__import__('fastapi').Depends(require_admin)):
+        application = await db.artist_applications.find_one({"id": application_id}, {"_id": 0})
+        if not application:
+            raise HTTPException(404, "Artist application not found")
+        if application.get("status") == "approved" and body.approved:
+            return {"reviewed": True, "approved": True, "artist_id": application.get("artist_id")}
+        if not body.approved:
+            await db.artist_applications.update_one({"id": application_id}, {"$set": {"status": "rejected", "admin_note": body.admin_note, "reviewed_at": now_iso()}})
+            return {"reviewed": True, "approved": False, "application_id": application_id}
+
+        artist_id = application.get("artist_id") or str(uuid.uuid4())
+        artist = {
+            "id": artist_id,
+            "name": application["name"], "handle": application["handle"], "city": application["city"], "studio": application["studio"],
+            "address": application.get("address", ""), "lat": 0.0, "lon": 0.0, "styles": application.get("styles", []),
+            "bio": application.get("bio", ""), "bio_tl": application.get("bio_tl", ""),
+            "home_service_available": bool(application.get("home_service_available", False)), "home_service_fee": int(application.get("home_service_fee", 0)),
+            "rate_per_hour": int(application.get("rate_per_hour", 0)), "avatar": application.get("avatar", ""), "hero": application.get("hero", ""),
+            "portfolio": application.get("portfolio", []), "rating": 5.0, "reviews_count": 0, "active": True, "blocked_dates": [],
+            "artist_user_id": application["user_id"], "phone": application.get("phone", ""), "service_area": application.get("service_area", ""),
+        }
+        existing_artist = await db.artists.find_one({"artist_user_id": application["user_id"]}, {"_id": 0})
+        if existing_artist:
+            artist_id = existing_artist["id"]
+            await db.artists.update_one({"id": artist_id}, {"$set": artist})
+        else:
+            await db.artists.insert_one(artist)
+        await db.artist_applications.update_one({"id": application_id}, {"$set": {"status": "approved", "artist_id": artist_id, "admin_note": body.admin_note, "reviewed_at": now_iso()}})
+        return {"reviewed": True, "approved": True, "application_id": application_id, "artist_id": artist_id}
+
+    # Add directly to app because api_router was already included by server.py.
+    app.add_api_route("/api/artist-applications", apply, methods=["POST"])
+    app.add_api_route("/api/artist-applications/me", my_application, methods=["GET"])
+    app.add_api_route("/api/admin/artist-applications", admin_list, methods=["GET"])
+    app.add_api_route("/api/admin/artist-applications/{application_id}/review", review, methods=["POST"])
