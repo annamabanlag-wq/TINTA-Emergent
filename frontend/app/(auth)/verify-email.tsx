@@ -12,25 +12,31 @@ export default function VerifyEmail() {
   const [email, setEmail] = useState(typeof params.email === "string" ? params.email : "");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [message, setMessage] = useState("");
   const [err, setErr] = useState("");
+  const [cooldown, setCooldown] = useState(0);
 
   const submit = async () => {
-    setErr("");
-    setMessage("");
-    setBusy(true);
+    setErr(""); setMessage(""); setBusy(true);
     try {
-      await api<{ verified: boolean }>("/auth/verify-email", {
-        method: "POST",
-        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
-      });
+      await api<{ verified: boolean }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ email: email.trim(), code: code.trim() }) });
       setMessage("EMAIL VERIFIED. YOU CAN NOW SIGN IN.");
       setTimeout(() => router.replace("/(auth)/sign-in"), 700);
-    } catch (e: any) {
-      setErr(e?.message ?? "Verification failed");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e: any) { setErr(e?.message ?? "Verification failed"); }
+    finally { setBusy(false); }
+  };
+
+  const resend = async () => {
+    if (resending || cooldown > 0 || !email.trim()) return;
+    setErr(""); setMessage(""); setResending(true);
+    try {
+      const result = await api<{ message: string }>("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email: email.trim() }) });
+      setMessage(result.message.toUpperCase());
+      setCooldown(30);
+      const timer = setInterval(() => setCooldown(v => { if (v <= 1) { clearInterval(timer); return 0; } return v - 1; }), 1000);
+    } catch (e: any) { setErr(e?.message ?? "Could not resend code"); }
+    finally { setResending(false); }
   };
 
   return (
@@ -39,20 +45,18 @@ export default function VerifyEmail() {
         <Text style={styles.title}>VERIFY{"\n"}EMAIL</Text>
         <Text style={styles.subtitle}>CHECK YOUR INBOX</Text>
         <Text style={styles.copy}>We sent a 6-digit verification code to your email. The code expires in 15 minutes.</Text>
-
         <Text style={styles.label}>EMAIL</Text>
         <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={styles.input} placeholder="you@example.com" placeholderTextColor={colors.muted} />
-
         <Text style={styles.label}>6-DIGIT CODE</Text>
         <TextInput value={code} onChangeText={(v) => setCode(v.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} style={[styles.input, styles.code]} placeholder="000000" placeholderTextColor={colors.muted} />
-
         {!!err && <Text style={styles.err}>{err.toUpperCase()}</Text>}
         {!!message && <Text style={styles.success}>{message}</Text>}
-
         <Pressable onPress={submit} disabled={busy || !email.trim() || code.length !== 6} style={[styles.cta, (busy || !email.trim() || code.length !== 6) && styles.disabled]}>
           <Text style={styles.ctaText}>{busy ? "VERIFYING..." : "VERIFY EMAIL"}</Text>
         </Pressable>
-
+        <Pressable onPress={resend} disabled={resending || cooldown > 0 || !email.trim()} style={[styles.secondary, (resending || cooldown > 0) && styles.disabled]}>
+          <Text style={styles.secondaryText}>{resending ? "SENDING..." : cooldown > 0 ? `RESEND CODE (${cooldown})` : "RESEND CODE"}</Text>
+        </Pressable>
         <Pressable onPress={() => router.replace("/(auth)/sign-in")} style={styles.secondary}>
           <Text style={styles.secondaryText}>← BACK TO SIGN IN</Text>
         </Pressable>
