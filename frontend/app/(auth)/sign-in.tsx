@@ -84,6 +84,12 @@ export default function SignIn() {
             <Text style={styles.secondaryText}>CREATE AN ACCOUNT →</Text>
           </Pressable>
         </Link>
+
+        <Link href="/artist/apply" asChild>
+          <Pressable style={styles.artistBtn}>
+            <Text style={styles.artistText}>ARE YOU AN ARTIST? APPLY HERE →</Text>
+          </Pressable>
+        </Link>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -122,4 +128,6 @@ const styles = StyleSheet.create({
   divider: { height: 2, backgroundColor: colors.divider, marginVertical: spacing.lg },
   secondaryBtn: { paddingVertical: spacing.md, alignItems: "center", borderWidth: 2, borderColor: colors.borderStrong },
   secondaryText: { color: colors.onSurface, fontSize: 13, fontWeight: "800", letterSpacing: 2 },
+  artistBtn: { paddingVertical: spacing.md, alignItems: "center" },
+  artistText: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 1.5, textAlign: "center" },
 });
