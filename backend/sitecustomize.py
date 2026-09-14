@@ -26,6 +26,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_email_route_fix(module)
             from gcash_only_patch import install as install_gcash_only
             install_gcash_only(module)
+            from gcash_security_patch import install as install_gcash_security
+            install_gcash_security(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
