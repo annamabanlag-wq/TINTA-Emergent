@@ -25,9 +25,37 @@ def _smtp_configured() -> bool:
     return bool(os.getenv("RESEND_API_KEY") and os.getenv("EMAIL_FROM"))
 
 
+def _test_mode() -> bool:
+    return os.getenv("EMAIL_VERIFICATION_TEST_MODE", "false").strip().lower() == "true"
+
+
+def _test_email() -> str:
+    return os.getenv("RESEND_TEST_EMAIL", "").strip().lower()
+
+
+def _enforce_test_email(email: str) -> str:
+    """In explicit test mode, only the configured Resend account email is allowed.
+
+    This keeps mailbox verification real while Resend has no verified sending
+    domain. Test mode is opt-in and never enabled by default.
+    """
+    normalized = email.strip().lower()
+    if not _test_mode():
+        return normalized
+    allowed = _test_email()
+    if not allowed:
+        raise HTTPException(503, "Email verification test mode is not configured.")
+    if normalized != allowed:
+        raise HTTPException(422, "Test mode only allows the configured test email address.")
+    return normalized
+
+
 def _send_code(email: str, code: str) -> None:
     api_key = os.environ["RESEND_API_KEY"]
     sender = os.environ["EMAIL_FROM"]
+    recipient = _test_email() if _test_mode() else email
+    if _test_mode() and not recipient:
+        raise RuntimeError("RESEND_TEST_EMAIL is required in email verification test mode")
     response = requests.post(
         RESEND_API_URL,
         headers={
@@ -36,7 +64,7 @@ def _send_code(email: str, code: str) -> None:
         },
         json={
             "from": sender,
-            "to": [email],
+            "to": [recipient],
             "subject": "Verify your TINTA account",
             "text": (
                 f"Your TINTA verification code is: {code}\n\n"
@@ -90,7 +118,7 @@ def install(server_module):
         async def resend_verification(body: ResendVerificationIn):
             if not _smtp_configured():
                 raise HTTPException(503, "Email verification is not configured yet.")
-            email = body.email.strip().lower()
+            email = _enforce_test_email(body.email)
             user = await server_module.db.users.find_one({"email": email}, {"_id": 0})
             if not user:
                 return {"sent": True, "message": "If the account exists, a verification email was sent."}
@@ -119,7 +147,7 @@ def install(server_module):
                     raise HTTPException(503, "Email verification is not configured yet. Please try again shortly.")
                 try:
                     validated = validate_email(body.email, check_deliverability=True)
-                    body.email = validated.normalized
+                    body.email = _enforce_test_email(validated.normalized)
                 except EmailNotValidError:
                     raise HTTPException(422, "Please enter a real, reachable email address.")
                 result = await original_register(body)
