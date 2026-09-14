@@ -1,5 +1,5 @@
-import SignIn from "./sign-in";
+import { Redirect } from "expo-router";
 
 export default function ArtistSignIn() {
-  return <SignIn />;
+  return <Redirect href="/(auth)/sign-in?next=artist" />;
 }
