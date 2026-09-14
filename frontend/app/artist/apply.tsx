@@ -70,7 +70,7 @@ export default function ArtistApply() {
       <Pressable style={styles.cta} onPress={() => router.replace({ pathname: "/(auth)/sign-up", params: { role: "artist" } })}>
         <Text style={styles.ctaText}>CREATE ARTIST ACCOUNT</Text>
       </Pressable>
-      <Pressable style={styles.secondary} onPress={() => router.replace("/(auth)/sign-in")}>
+      <Pressable style={styles.secondary} onPress={() => router.replace("/(auth)/artist-sign-in")}>
         <Text style={styles.secondaryText}>ALREADY HAVE AN ACCOUNT? SIGN IN</Text>
       </Pressable>
       <Pressable style={styles.secondary} onPress={() => router.back()}>
