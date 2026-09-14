@@ -14,8 +14,6 @@ async function readToken(): Promise<string | null> {
       if (typeof window === "undefined") return null;
       const current = window.localStorage.getItem(KEY);
       if (current) return current;
-      // Do not restore the legacy token. It may have been signed by an older
-      // backend/JWT secret and is the common source of persistent 401 loops.
       window.localStorage.removeItem(LEGACY_KEY);
       return null;
     } catch {
@@ -61,49 +59,71 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const t = await readToken();
-      if (t) {
-        try {
-          const me = await api<User>("/auth/me", {}, t);
-          setUser(me);
-          setToken(t);
-        } catch {
-          // Never keep a token that the current backend rejects. This prevents
-          // repeated 401 requests on every screen after a deployment/restart.
-          await writeToken(null);
-          setUser(null);
-          setToken(null);
-        }
-      }
-      setLoading(false);
-    })();
-  }, []);
-
-  const doAuth = useCallback(async (path: string, body: any) => {
-    const r = await api<AuthOut>(path, { method: "POST", body: JSON.stringify(body) });
-    // Registration now intentionally returns an empty token until the mailbox
-    // is verified. Never persist an empty token or create a false authenticated
-    // session; the verification screen will handle the next step.
-    if (!r.access_token) {
-      await writeToken(null);
-      setToken(null);
-      setUser(null);
-      return;
-    }
-    await writeToken(r.access_token);
-    setToken(r.access_token);
-    setUser(r.user);
-  }, []);
-
-  const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
-  const signUp = useCallback((email: string, password: string, name: string) => doAuth("/auth/register", { email, password, name }), [doAuth]);
-  const signOut = useCallback(async () => {
+  const clearSession = useCallback(async () => {
     await writeToken(null);
     setToken(null);
     setUser(null);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    // Any protected API call that receives 401 invalidates this session once,
+    // so the app cannot keep retrying a JWT the backend has rejected.
+    const onAuthExpired = () => {
+      void clearSession();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("tinta:auth-expired", onAuthExpired);
+    }
+
+    (async () => {
+      const t = await readToken();
+      if (!active) return;
+      if (t) {
+        try {
+          const me = await api<User>("/auth/me", {}, t);
+          if (!active) return;
+          setUser(me);
+          setToken(t);
+        } catch {
+          await clearSession();
+        }
+      }
+      if (active) setLoading(false);
+    })();
+
+    return () => {
+      active = false;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("tinta:auth-expired", onAuthExpired);
+      }
+    };
+  }, [clearSession]);
+
+  const doAuth = useCallback(async (path: string, body: any) => {
+    const r = await api<AuthOut>(path, { method: "POST", body: JSON.stringify(body) });
+    // Registration intentionally returns an empty token until mailbox verification.
+    if (!r.access_token) {
+      await clearSession();
+      return;
+    }
+
+    // Validate the newly issued JWT against the same backend before persisting it.
+    // This catches signing/configuration mismatches immediately instead of creating
+    // a session that fails with 401 on the next protected request.
+    const me = await api<User>("/auth/me", {}, r.access_token);
+    await writeToken(r.access_token);
+    setToken(r.access_token);
+    setUser(me);
+  }, [clearSession]);
+
+  const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
+  const signUp = useCallback((email: string, password: string, name: string) => doAuth("/auth/register", { email, password, name }), [doAuth]);
+  const signOut = useCallback(async () => {
+    await clearSession();
+  }, [clearSession]);
 
   return (
     <SessionContext.Provider value={{ user, token, loading, signIn, signUp, signOut }}>
