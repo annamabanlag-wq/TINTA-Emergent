@@ -2,12 +2,19 @@ const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 export const API_URL = `${BASE}/api`;
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
+  // Some older callers passed the auth token inside RequestInit as `token` instead
+  // of using the third argument. Accept both forms so protected endpoints cannot
+  // silently lose the Bearer header.
+  const legacyToken = (options as any)?.token as string | null | undefined;
+  const authToken = token ?? legacyToken ?? null;
+  const { token: _ignoredToken, ...requestOptions } = options as any;
+
   const res = await fetch(`${API_URL}${path}`, {
-    ...options,
+    ...requestOptions,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {}),
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(requestOptions.headers ?? {}),
     },
   });
   const data = await res.json().catch(() => ({}));
