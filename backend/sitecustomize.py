@@ -21,6 +21,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_artist(module)
             from email_validation_patch import install as install_email_validation
             install_email_validation(module)
+            from email_verification_patch import install as install_email_verification
+            install_email_verification(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
