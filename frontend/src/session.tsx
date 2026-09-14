@@ -3,22 +3,46 @@ import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { api, AuthOut, User } from "./api";
 
-const KEY = "inked_token";
+// Version the auth key so a deployment that changed JWT signing/config cannot keep
+// replaying an old token. Users get a clean session and a fresh token after deploy.
+const KEY = "inked_token_v2";
+const LEGACY_KEY = "inked_token";
 
 async function readToken(): Promise<string | null> {
   if (Platform.OS === "web") {
-    try { return typeof window !== "undefined" ? window.localStorage.getItem(KEY) : null; } catch { return null; }
+    try {
+      if (typeof window === "undefined") return null;
+      const current = window.localStorage.getItem(KEY);
+      if (current) return current;
+      // Do not restore the legacy token. It may have been signed by an older
+      // backend/JWT secret and is the common source of persistent 401 loops.
+      window.localStorage.removeItem(LEGACY_KEY);
+      return null;
+    } catch {
+      return null;
+    }
   }
-  return SecureStore.getItemAsync(KEY);
+
+  try {
+    const current = await SecureStore.getItemAsync(KEY);
+    if (current) return current;
+    await SecureStore.deleteItemAsync(LEGACY_KEY);
+    return null;
+  } catch {
+    return null;
+  }
 }
+
 async function writeToken(v: string | null) {
   if (Platform.OS === "web") {
     if (typeof window === "undefined") return;
     if (v) window.localStorage.setItem(KEY, v); else window.localStorage.removeItem(KEY);
+    window.localStorage.removeItem(LEGACY_KEY);
     return;
   }
   if (v) await SecureStore.setItemAsync(KEY, v);
   else await SecureStore.deleteItemAsync(KEY);
+  await SecureStore.deleteItemAsync(LEGACY_KEY);
 }
 
 type Ctx = {
@@ -46,7 +70,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           setUser(me);
           setToken(t);
         } catch {
+          // Never keep a token that the current backend rejects. This prevents
+          // repeated 401 requests on every screen after a deployment/restart.
           await writeToken(null);
+          setUser(null);
+          setToken(null);
         }
       }
       setLoading(false);
