@@ -83,6 +83,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const doAuth = useCallback(async (path: string, body: any) => {
     const r = await api<AuthOut>(path, { method: "POST", body: JSON.stringify(body) });
+    // Registration now intentionally returns an empty token until the mailbox
+    // is verified. Never persist an empty token or create a false authenticated
+    // session; the verification screen will handle the next step.
+    if (!r.access_token) {
+      await writeToken(null);
+      setToken(null);
+      setUser(null);
+      return;
+    }
     await writeToken(r.access_token);
     setToken(r.access_token);
     setUser(r.user);
