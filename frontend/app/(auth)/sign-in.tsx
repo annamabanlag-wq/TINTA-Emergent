@@ -11,6 +11,7 @@ export default function SignIn() {
   const router = useRouter();
   const params = useLocalSearchParams<{ next?: string }>();
   const isArtist = params.next === "artist";
+  const isAdmin = params.next === "admin";
   const insets = useSafeAreaInsets();
   const { signIn } = useSession();
   const [email, setEmail] = useState("");
@@ -23,7 +24,8 @@ export default function SignIn() {
     setBusy(true);
     try {
       await signIn(email.trim(), password);
-      router.replace(isArtist ? "/artist/apply" : "/(tabs)");
+      if (isAdmin) router.replace("/admin/payments");
+      else router.replace(isArtist ? "/artist/apply" : "/(tabs)");
     } catch (e: any) {
       setErr(e?.message ?? "Sign in failed");
     } finally {
@@ -31,35 +33,39 @@ export default function SignIn() {
     }
   };
 
+  const signupHref = isArtist ? "/(auth)/sign-up?role=artist" : "/(auth)/sign-up";
+
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <View style={styles.hero}>
         <Image source={IMAGES.moody} style={StyleSheet.absoluteFill} contentFit="cover" />
         <LinearGradient colors={["transparent", colors.surface]} style={StyleSheet.absoluteFill} />
         <View style={[styles.heroContent, { paddingTop: insets.top + spacing.xl }]}>
-          <Text style={styles.brandMark}>INKED</Text>
-          <Text style={styles.tagline}>BOOK YOUR NEXT PIECE</Text>
+          <Text style={styles.brandMark}>{isAdmin ? "TINTA ADMIN" : isArtist ? "TINTA ARTIST" : "TINTA"}</Text>
+          <Text style={styles.tagline}>{isAdmin ? "OWNER CONTROL CENTER" : isArtist ? "ARTIST STUDIO PORTAL" : "BOOK YOUR NEXT PIECE"}</Text>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + spacing.xl }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{isArtist ? "ARTIST SIGN IN" : "SIGN IN"}</Text>
-        {isArtist && <Text style={styles.artistHint}>Sign in to continue setting up your TINTA artist profile.</Text>}
+        <Text style={styles.title}>{isAdmin ? "ADMIN SIGN IN" : isArtist ? "ARTIST SIGN IN" : "SIGN IN"}</Text>
+        {(isArtist || isAdmin) && <Text style={styles.artistHint}>{isAdmin ? "Owner access only. Your account must have admin permissions." : "Sign in to continue setting up your TINTA artist profile."}</Text>}
         <Text style={styles.label}>EMAIL</Text>
         <TextInput testID="signin-email-input" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@ink.com" placeholderTextColor={colors.muted} style={styles.input} />
         <Text style={styles.label}>PASSWORD</Text>
         <TextInput testID="signin-password-input" value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={colors.muted} style={styles.input} />
         {!!err && <Text style={styles.err} testID="signin-error">{err.toUpperCase()}</Text>}
         <Pressable testID="signin-submit-button" onPress={submit} disabled={busy || !email || !password} style={({ pressed }) => [styles.cta, (busy || !email || !password) && styles.ctaDisabled, pressed && styles.ctaPressed]}>
-          <Text style={styles.ctaText}>{busy ? "SIGNING IN..." : isArtist ? "SIGN IN AS ARTIST" : "SIGN IN"}</Text>
+          <Text style={styles.ctaText}>{busy ? "SIGNING IN..." : isAdmin ? "SIGN IN AS OWNER" : isArtist ? "SIGN IN AS ARTIST" : "SIGN IN"}</Text>
         </Pressable>
-        <View style={styles.divider} />
-        <Link href="/(auth)/sign-up" asChild>
-          <Pressable testID="go-to-signup-button" style={styles.secondaryBtn}><Text style={styles.secondaryText}>CREATE AN ACCOUNT →</Text></Pressable>
-        </Link>
-        <Link href="/artist/apply" asChild>
-          <Pressable style={styles.artistBtn}><Text style={styles.artistText}>ARE YOU AN ARTIST? APPLY HERE →</Text></Pressable>
-        </Link>
+        {!isAdmin && <>
+          <View style={styles.divider} />
+          <Link href={signupHref} asChild>
+            <Pressable testID="go-to-signup-button" style={styles.secondaryBtn}><Text style={styles.secondaryText}>CREATE AN ACCOUNT →</Text></Pressable>
+          </Link>
+          {!isArtist && <Link href="/artist/apply" asChild>
+            <Pressable style={styles.artistBtn}><Text style={styles.artistText}>ARE YOU AN ARTIST? APPLY HERE →</Text></Pressable>
+          </Link>}
+        </>}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -69,7 +75,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   hero: { height: 280, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 2, borderBottomColor: colors.borderStrong },
   heroContent: { flex: 1, justifyContent: "flex-end", padding: spacing.lg },
-  brandMark: { color: colors.onSurface, fontSize: 64, fontWeight: "900", letterSpacing: 4 },
+  brandMark: { color: colors.onSurface, fontSize: 52, fontWeight: "900", letterSpacing: 4 },
   tagline: { color: colors.brand, fontSize: 12, fontWeight: "800", letterSpacing: 3, marginTop: spacing.xs },
   form: { padding: spacing.lg, gap: spacing.md },
   title: { color: colors.onSurface, fontSize: 32, fontWeight: "900", letterSpacing: 2, marginBottom: spacing.md },
