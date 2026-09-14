@@ -36,7 +36,7 @@ export default function ArtistApply() {
   }, [token, sessionLoading]);
 
   const submit = async () => {
-    if (!token) return router.replace("/(auth)/sign-in");
+    if (!token) return router.replace({ pathname: "/(auth)/sign-up", params: { role: "artist" } });
     if (!name || !handle || !city || !studio || bio.length < 10 || !rate) {
       return Alert.alert("Missing information", "Please complete the required fields.");
     }
@@ -66,9 +66,9 @@ export default function ArtistApply() {
   if (status === "signed_out") {
     return <View style={styles.center}>
       <Text style={styles.title}>BECOME A TINTA ARTIST</Text>
-      <Text style={styles.muted}>Create your TINTA account first, then sign in to submit your artist profile for verification.</Text>
-      <Pressable style={styles.cta} onPress={() => router.replace("/(auth)/sign-up")}>
-        <Text style={styles.ctaText}>CREATE ACCOUNT TO APPLY</Text>
+      <Text style={styles.muted}>Create your dedicated artist account first. Verify your email, sign in, then complete your artist profile for admin approval.</Text>
+      <Pressable style={styles.cta} onPress={() => router.replace({ pathname: "/(auth)/sign-up", params: { role: "artist" } })}>
+        <Text style={styles.ctaText}>CREATE ARTIST ACCOUNT</Text>
       </Pressable>
       <Pressable style={styles.secondary} onPress={() => router.replace("/(auth)/sign-in")}>
         <Text style={styles.secondaryText}>ALREADY HAVE AN ACCOUNT? SIGN IN</Text>
