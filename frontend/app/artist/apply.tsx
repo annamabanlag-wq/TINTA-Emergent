@@ -19,11 +19,7 @@ export default function ArtistApply() {
 
   useEffect(() => {
     if (sessionLoading) return;
-    if (!token) {
-      setStatus("signed_out");
-      return;
-    }
-
+    if (!token) { setStatus("signed_out"); return; }
     let cancelled = false;
     setStatus("loading");
     api<any>("/artist-applications/me", {}, token)
@@ -35,10 +31,7 @@ export default function ArtistApply() {
           setStudio(r.studio || ""); setBio(r.bio || ""); setRate(r.rate_per_hour ? String(r.rate_per_hour) : "");
         }
       })
-      .catch(() => {
-        if (!cancelled) setStatus("not_started");
-      });
-
+      .catch(() => { if (!cancelled) setStatus("not_started"); });
     return () => { cancelled = true; };
   }, [token, sessionLoading]);
 
@@ -62,11 +55,8 @@ export default function ArtistApply() {
       }, token);
       setStatus(r.status || "pending");
       Alert.alert("Application submitted", "Your artist profile is now pending admin verification.");
-    } catch (e: any) {
-      Alert.alert("Could not submit", e?.message || "Please try again.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e: any) { Alert.alert("Could not submit", e?.message || "Please try again."); }
+    finally { setBusy(false); }
   };
 
   if (sessionLoading || status === "loading") {
@@ -75,10 +65,13 @@ export default function ArtistApply() {
 
   if (status === "signed_out") {
     return <View style={styles.center}>
-      <Text style={styles.title}>SIGN IN REQUIRED</Text>
-      <Text style={styles.muted}>Please create or sign in to your TINTA account before applying as an artist.</Text>
-      <Pressable style={styles.cta} onPress={() => router.replace("/(auth)/sign-in")}>
-        <Text style={styles.ctaText}>SIGN IN TO APPLY</Text>
+      <Text style={styles.title}>BECOME A TINTA ARTIST</Text>
+      <Text style={styles.muted}>Create your TINTA account first, then sign in to submit your artist profile for verification.</Text>
+      <Pressable style={styles.cta} onPress={() => router.replace("/(auth)/sign-up")}>
+        <Text style={styles.ctaText}>CREATE ACCOUNT TO APPLY</Text>
+      </Pressable>
+      <Pressable style={styles.secondary} onPress={() => router.replace("/(auth)/sign-in")}>
+        <Text style={styles.secondaryText}>ALREADY HAVE AN ACCOUNT? SIGN IN</Text>
       </Pressable>
       <Pressable style={styles.secondary} onPress={() => router.back()}>
         <Text style={styles.secondaryText}>GO BACK</Text>
@@ -96,4 +89,4 @@ export default function ArtistApply() {
     <Pressable style={styles.secondary} onPress={() => router.back()}><Text style={styles.secondaryText}>CANCEL</Text></Pressable>
   </ScrollView>;
 }
-const styles = StyleSheet.create({ root:{flex:1,backgroundColor:colors.surface}, form:{padding:spacing.lg,gap:spacing.md}, center:{flex:1,backgroundColor:colors.surface,alignItems:"center",justifyContent:"center",padding:spacing.lg,gap:spacing.md}, title:{color:colors.onSurface,fontSize:38,fontWeight:"900",letterSpacing:2,lineHeight:40}, subtitle:{color:colors.brand,fontSize:11,fontWeight:"800",letterSpacing:2,marginBottom:spacing.lg}, label:{color:colors.muted,fontSize:10,fontWeight:"800",letterSpacing:1.5,marginTop:spacing.sm}, input:{backgroundColor:colors.surfaceSecondary,borderWidth:2,borderColor:colors.border,color:colors.onSurface,padding:14,fontSize:15},bio:{minHeight:110,textAlignVertical:"top"},cta:{backgroundColor:colors.brand,padding:18,alignItems:"center",marginTop:spacing.lg},ctaText:{color:colors.onBrand,fontSize:14,fontWeight:"900",letterSpacing:2},secondary:{borderWidth:2,borderColor:colors.borderStrong,padding:15,alignItems:"center"},secondaryText:{color:colors.onSurface,fontWeight:"800",letterSpacing:2},muted:{color:colors.muted,textAlign:"center",fontSize:15,lineHeight:24} });
+const styles = StyleSheet.create({ root:{flex:1,backgroundColor:colors.surface}, form:{padding:spacing.lg,gap:spacing.md}, center:{flex:1,backgroundColor:colors.surface,alignItems:"center",justifyContent:"center",padding:spacing.lg,gap:spacing.md}, title:{color:colors.onSurface,fontSize:38,fontWeight:"900",letterSpacing:2,lineHeight:40,textAlign:"center"}, subtitle:{color:colors.brand,fontSize:11,fontWeight:"800",letterSpacing:2,marginBottom:spacing.lg}, label:{color:colors.muted,fontSize:10,fontWeight:"800",letterSpacing:1.5,marginTop:spacing.sm}, input:{backgroundColor:colors.surfaceSecondary,borderWidth:2,borderColor:colors.border,color:colors.onSurface,padding:14,fontSize:15},bio:{minHeight:110,textAlignVertical:"top"},cta:{backgroundColor:colors.brand,padding:18,alignItems:"center",marginTop:spacing.lg},ctaText:{color:colors.onBrand,fontSize:14,fontWeight:"900",letterSpacing:2,textAlign:"center"},secondary:{borderWidth:2,borderColor:colors.borderStrong,padding:15,alignItems:"center",width:"100%"},secondaryText:{color:colors.onSurface,fontWeight:"800",letterSpacing:2,textAlign:"center"},muted:{color:colors.muted,textAlign:"center",fontSize:15,lineHeight:24} });
