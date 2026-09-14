@@ -79,8 +79,8 @@ export default function ArtistApply() {
     </View>;
   }
 
-  if (status === "pending") return <View style={styles.center}><Text style={styles.title}>APPLICATION PENDING</Text><Text style={styles.muted}>Your artist profile is waiting for admin verification.</Text><Pressable style={styles.secondary} onPress={() => router.back()}><Text style={styles.secondaryText}>GO BACK</Text></Pressable></View>;
-  if (status === "approved") return <View style={styles.center}><Text style={styles.title}>APPROVED</Text><Text style={styles.muted}>Your artist profile is live and visible to customers.</Text><Pressable style={styles.secondary} onPress={() => router.back()}><Text style={styles.secondaryText}>GO BACK</Text></Pressable></View>;
+  if (status === "pending") return <View style={styles.center}><Text style={styles.title}>APPLICATION PENDING</Text><Text style={styles.muted}>Your artist profile is waiting for admin verification.</Text><Pressable style={styles.secondary} onPress={() => router.replace("/(auth)/artist-sign-in")}><Text style={styles.secondaryText}>GO BACK</Text></Pressable></View>;
+  if (status === "approved") return <View style={styles.center}><Text style={styles.title}>APPROVED</Text><Text style={styles.muted}>Your artist profile is live and visible to customers.</Text><Pressable style={styles.secondary} onPress={() => router.replace("/(auth)/artist-sign-in")}><Text style={styles.secondaryText}>GO BACK</Text></Pressable></View>;
 
   return <ScrollView style={styles.root} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
     <Text style={styles.title}>BECOME AN{"\n"}ARTIST</Text><Text style={styles.subtitle}>SUBMIT YOUR PROFILE FOR VERIFICATION</Text>
