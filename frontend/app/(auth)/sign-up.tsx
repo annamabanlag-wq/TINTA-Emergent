@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
-import { Link, useRouter } from "expo-router";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../../src/session";
 import { colors, spacing } from "../../src/theme";
 
 export default function SignUp() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ role?: string }>();
+  const isArtist = params.role === "artist";
   const insets = useSafeAreaInsets();
   const { signUp } = useSession();
   const [name, setName] = useState("");
@@ -20,7 +22,7 @@ export default function SignUp() {
     setBusy(true);
     try {
       await signUp(email.trim(), password, name.trim());
-      router.replace({ pathname: "/(auth)/verify-email", params: { email: email.trim() } });
+      router.replace({ pathname: "/(auth)/verify-email", params: { email: email.trim(), role: isArtist ? "artist" : "customer" } });
     } catch (e: any) {
       setErr(e?.message ?? "Sign up failed");
     } finally {
@@ -33,22 +35,22 @@ export default function SignUp() {
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView contentContainerStyle={[styles.form, { paddingTop: insets.top + spacing.xl, paddingBottom: insets.bottom + spacing.xl }]} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>CREATE{"\n"}ACCOUNT</Text>
-        <Text style={styles.subtitle}>JOIN THE STUDIO</Text>
+        <Text style={styles.title}>{isArtist ? "CREATE ARTIST\nACCOUNT" : "CREATE\nACCOUNT"}</Text>
+        <Text style={styles.subtitle}>{isArtist ? "JOIN TINTA AS AN ARTIST" : "JOIN THE STUDIO"}</Text>
         <Text style={styles.label}>NAME</Text>
         <TextInput testID="signup-name-input" value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor={colors.muted} style={styles.input} />
         <Text style={styles.label}>EMAIL</Text>
         <TextInput testID="signup-email-input" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@ink.com" placeholderTextColor={colors.muted} style={styles.input} />
         <Text style={styles.label}>PASSWORD (MIN 6)</Text>
         <TextInput testID="signup-password-input" value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={colors.muted} style={styles.input} />
-        <Text style={styles.hint}>A verification code will be sent to your email before you can sign in.</Text>
+        <Text style={styles.hint}>{isArtist ? "Your account must be email-verified before you can submit your artist profile for admin approval." : "A verification code will be sent to your email before you can sign in."}</Text>
         {!!err && <Text style={styles.err} testID="signup-error">{err.toUpperCase()}</Text>}
         <Pressable testID="signup-submit-button" onPress={submit} disabled={disabled} style={({ pressed }) => [styles.cta, disabled && styles.ctaDisabled, pressed && styles.ctaPressed]}>
-          <Text style={styles.ctaText}>{busy ? "CREATING..." : "CREATE ACCOUNT"}</Text>
+          <Text style={styles.ctaText}>{busy ? "CREATING..." : isArtist ? "CREATE ARTIST ACCOUNT" : "CREATE ACCOUNT"}</Text>
         </Pressable>
-        <Link href="/artist/apply" asChild>
+        {!isArtist && <Link href="/artist/apply" asChild>
           <Pressable style={styles.artistBtn}><Text style={styles.artistText}>ARE YOU AN ARTIST? APPLY HERE →</Text></Pressable>
-        </Link>
+        </Link>}
         <View style={styles.divider} />
         <Link href="/(auth)/sign-in" asChild>
           <Pressable testID="go-to-signin-button" style={styles.secondaryBtn}><Text style={styles.secondaryText}>← BACK TO SIGN IN</Text></Pressable>
