@@ -2,26 +2,30 @@ import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSession } from "../../src/session";
+import { api } from "../../src/api";
 import { colors, spacing } from "../../src/theme";
 
 export default function SignUp() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signUp } = useSession();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [verification, setVerification] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState(false);
   const [err, setErr] = useState("");
+  const [verified, setVerified] = useState(false);
 
   const submit = async () => {
     setErr("");
     setBusy(true);
     try {
-      await signUp(email, password, name);
-      setCreated(true);
+      await api<any>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ email, password, name }),
+      });
+      setVerification(true);
     } catch (e: any) {
       setErr(e?.message ?? "Sign up failed");
     } finally {
@@ -29,19 +33,53 @@ export default function SignUp() {
     }
   };
 
-  if (created) {
+  const verify = async () => {
+    setErr("");
+    setBusy(true);
+    try {
+      await api<any>("/auth/verify-email", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      });
+      setVerified(true);
+    } catch (e: any) {
+      setErr(e?.message ?? "Verification failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (verified) {
     return (
       <View style={[styles.root, styles.success, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <Text style={styles.title}>ACCOUNT{"\n"}CREATED</Text>
+        <Text style={styles.title}>EMAIL{"\n"}VERIFIED</Text>
         <Text style={styles.subtitle}>WELCOME TO TINTA</Text>
-        <Text style={styles.successText}>Your account is ready. What would you like to do next?</Text>
-        <Pressable style={styles.cta} onPress={() => router.replace("/(tabs)")}>
-          <Text style={styles.ctaText}>CONTINUE AS CUSTOMER</Text>
-        </Pressable>
-        <Pressable style={styles.artistBtn} onPress={() => router.replace("/artist/apply")}>
-          <Text style={styles.artistText}>APPLY AS AN ARTIST →</Text>
+        <Text style={styles.successText}>Your email is verified. Sign in to continue as a customer or apply to become an artist.</Text>
+        <Pressable style={styles.cta} onPress={() => router.replace("/(auth)/sign-in")}>
+          <Text style={styles.ctaText}>SIGN IN TO TINTA</Text>
         </Pressable>
       </View>
+    );
+  }
+
+  if (verification) {
+    return (
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ScrollView contentContainerStyle={[styles.form, { paddingTop: insets.top + spacing.xl, paddingBottom: insets.bottom + spacing.xl }]} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>VERIFY{"\n"}EMAIL</Text>
+          <Text style={styles.subtitle}>CHECK YOUR INBOX</Text>
+          <Text style={styles.successText}>We sent a 6-digit verification code to {email}. Enter it below. The code expires in 15 minutes.</Text>
+          <Text style={styles.label}>VERIFICATION CODE</Text>
+          <TextInput testID="verification-code-input" value={code} onChangeText={(v) => setCode(v.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" placeholder="123456" placeholderTextColor={colors.muted} style={styles.input} maxLength={6} />
+          {!!err && <Text style={styles.err} testID="signup-error">{err.toUpperCase()}</Text>}
+          <Pressable testID="verify-email-button" onPress={verify} disabled={busy || code.length !== 6} style={({ pressed }) => [styles.cta, (busy || code.length !== 6) && styles.ctaDisabled, pressed && styles.ctaPressed]}>
+            <Text style={styles.ctaText}>{busy ? "VERIFYING..." : "VERIFY EMAIL"}</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryBtn} onPress={() => { setVerification(false); setCode(""); setErr(""); }}>
+            <Text style={styles.secondaryText}>← BACK</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
