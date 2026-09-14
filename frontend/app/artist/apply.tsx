@@ -7,7 +7,7 @@ import { colors, spacing } from "../../src/theme";
 
 export default function ArtistApply() {
   const router = useRouter();
-  const { token } = useSession();
+  const { token, loading: sessionLoading } = useSession();
   const [status, setStatus] = useState("loading");
   const [name, setName] = useState(""); const [handle, setHandle] = useState("");
   const [city, setCity] = useState(""); const [studio, setStudio] = useState("");
@@ -17,19 +17,75 @@ export default function ArtistApply() {
   const [phone, setPhone] = useState(""); const [serviceArea, setServiceArea] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { if (!token) return; api<any>("/artist-applications/me", {}, token).then((r) => { setStatus(r.status || "not_started"); if (r.status === "rejected" || r.status === "approved") { setName(r.name || ""); setHandle(r.handle || ""); setCity(r.city || ""); setStudio(r.studio || ""); setBio(r.bio || ""); } }).catch(() => setStatus("not_started")); }, [token]);
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (!token) {
+      setStatus("signed_out");
+      return;
+    }
+
+    let cancelled = false;
+    setStatus("loading");
+    api<any>("/artist-applications/me", {}, token)
+      .then((r) => {
+        if (cancelled) return;
+        setStatus(r.status || "not_started");
+        if (r.status === "rejected" || r.status === "approved") {
+          setName(r.name || ""); setHandle(r.handle || ""); setCity(r.city || "");
+          setStudio(r.studio || ""); setBio(r.bio || ""); setRate(r.rate_per_hour ? String(r.rate_per_hour) : "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("not_started");
+      });
+
+    return () => { cancelled = true; };
+  }, [token, sessionLoading]);
 
   const submit = async () => {
     if (!token) return router.replace("/(auth)/sign-in");
-    if (!name || !handle || !city || !studio || bio.length < 10 || !rate) return Alert.alert("Missing information", "Please complete the required fields.");
+    if (!name || !handle || !city || !studio || bio.length < 10 || !rate) {
+      return Alert.alert("Missing information", "Please complete the required fields.");
+    }
     setBusy(true);
     try {
-      const r = await api<any>("/artist-applications", { method: "POST", body: JSON.stringify({ name, handle, city, studio, styles: stylesText.split(",").map(x => x.trim()).filter(Boolean), bio, rate_per_hour: Number(rate), avatar, hero, portfolio: portfolio.split(",").map(x => x.trim()).filter(Boolean), phone, service_area: serviceArea, home_service_available: false, home_service_fee: 0 }) }, token);
-      setStatus(r.status || "pending"); Alert.alert("Application submitted", "Your artist profile is now pending admin verification.");
-    } catch (e: any) { Alert.alert("Could not submit", e?.message || "Please try again."); } finally { setBusy(false); }
+      const r = await api<any>("/artist-applications", {
+        method: "POST",
+        body: JSON.stringify({
+          name, handle, city, studio,
+          styles: stylesText.split(",").map(x => x.trim()).filter(Boolean),
+          bio, rate_per_hour: Number(rate), avatar, hero,
+          portfolio: portfolio.split(",").map(x => x.trim()).filter(Boolean),
+          phone, service_area: serviceArea,
+          home_service_available: false, home_service_fee: 0
+        })
+      }, token);
+      setStatus(r.status || "pending");
+      Alert.alert("Application submitted", "Your artist profile is now pending admin verification.");
+    } catch (e: any) {
+      Alert.alert("Could not submit", e?.message || "Please try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  if (status === "loading") return <View style={styles.center}><Text style={styles.title}>LOADING...</Text></View>;
+  if (sessionLoading || status === "loading") {
+    return <View style={styles.center}><Text style={styles.title}>LOADING...</Text></View>;
+  }
+
+  if (status === "signed_out") {
+    return <View style={styles.center}>
+      <Text style={styles.title}>SIGN IN REQUIRED</Text>
+      <Text style={styles.muted}>Please create or sign in to your TINTA account before applying as an artist.</Text>
+      <Pressable style={styles.cta} onPress={() => router.replace("/(auth)/sign-in")}>
+        <Text style={styles.ctaText}>SIGN IN TO APPLY</Text>
+      </Pressable>
+      <Pressable style={styles.secondary} onPress={() => router.back()}>
+        <Text style={styles.secondaryText}>GO BACK</Text>
+      </Pressable>
+    </View>;
+  }
+
   if (status === "pending") return <View style={styles.center}><Text style={styles.title}>APPLICATION PENDING</Text><Text style={styles.muted}>Your artist profile is waiting for admin verification.</Text><Pressable style={styles.secondary} onPress={() => router.back()}><Text style={styles.secondaryText}>GO BACK</Text></Pressable></View>;
   if (status === "approved") return <View style={styles.center}><Text style={styles.title}>APPROVED</Text><Text style={styles.muted}>Your artist profile is live and visible to customers.</Text><Pressable style={styles.secondary} onPress={() => router.back()}><Text style={styles.secondaryText}>GO BACK</Text></Pressable></View>;
 
