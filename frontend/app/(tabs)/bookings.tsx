@@ -95,19 +95,11 @@ export default function BookingsTab() {
                       </View>
                     </View>
                     <View style={styles.followupActions}>
-                      <Pressable
-                        testID={`followup-review-${f.booking_id}`}
-                        onPress={() => router.push(`/artist/${f.artist_id}`)}
-                        style={styles.followupBtn}
-                      >
+                      <Pressable testID={`followup-review-${f.booking_id}`} onPress={() => router.push(`/artist/${f.artist_id}`)} style={styles.followupBtn}>
                         <Icon name="star" size={12} color={colors.onBrand} />
                         <Text style={styles.followupBtnText}>{t("bookings.followup.leaveReview")}</Text>
                       </Pressable>
-                      <Pressable
-                        testID={`followup-rebook-${f.booking_id}`}
-                        onPress={() => router.push(`/book/${f.artist_id}`)}
-                        style={[styles.followupBtn, styles.followupBtnGhost]}
-                      >
+                      <Pressable testID={`followup-rebook-${f.booking_id}`} onPress={() => router.push(`/book/${f.artist_id}`)} style={[styles.followupBtn, styles.followupBtnGhost]}>
                         <Icon name="rotate-cw" size={12} color={colors.onSurface} />
                         <Text style={[styles.followupBtnText, { color: colors.onSurface }]}>{t("bookings.followup.bookAgain")}</Text>
                       </Pressable>
@@ -123,6 +115,9 @@ export default function BookingsTab() {
             const daysAway = Math.round((d.getTime() - today0.getTime()) / 86400000);
             const upcomingSoon = item.status !== "cancelled" && daysAway >= 0 && daysAway <= 3;
             const reminderText = daysAway === 0 ? t("bookings.today") : daysAway === 1 ? t("bookings.tomorrow") : `${daysAway} ${t("bookings.daysAway")}`;
+            const isGcashPending = item.payment_method === "gcash" && item.payment_status !== "paid" && item.gcash_review_status === "pending";
+            const isGcashRejected = item.payment_method === "gcash" && item.payment_status !== "paid" && item.gcash_review_status === "rejected";
+            const paymentLabel = item.payment_status === "paid" ? "PAID" : isGcashPending ? "PENDING" : isGcashRejected ? "REJECTED" : (item.payment_status || "unpaid").toUpperCase();
             return (
               <View style={styles.row} testID={`booking-row-${item.id}`}>
                 {upcomingSoon && (
@@ -132,75 +127,52 @@ export default function BookingsTab() {
                   </View>
                 )}
                 <View style={styles.rowInner}>
-                <View style={styles.dateBlock}>
-                  <Text style={styles.day}>{d.getDate().toString().padStart(2, "0")}</Text>
-                  <Text style={styles.mon}>{d.toLocaleString("en", { month: "short" }).toUpperCase()}</Text>
-                  <Text style={styles.yr}>{d.getFullYear()}</Text>
-                </View>
-                <View style={styles.rowContent}>
-                  <View style={styles.rowTop}>
-                    <Image source={item.artist_avatar} style={styles.avatar} contentFit="cover" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.artistName}>{item.artist_name.toUpperCase()}</Text>
-                      <Text style={styles.timeRow}>
-                        <Icon name="clock" size={11} color={colors.muted} />  {item.time_slot} · {item.estimated_hours}H
-                      </Text>
-                    </View>
-                    <View style={[styles.statusPill, item.status === "cancelled" && styles.statusCancelled]}>
-                      <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
-                    </View>
+                  <View style={styles.dateBlock}>
+                    <Text style={styles.day}>{d.getDate().toString().padStart(2, "0")}</Text>
+                    <Text style={styles.mon}>{d.toLocaleString("en", { month: "short" }).toUpperCase()}</Text>
+                    <Text style={styles.yr}>{d.getFullYear()}</Text>
                   </View>
-                  <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
-                  {item.reference_image && (
-                    <View style={styles.refThumb}>
-                      <Image
-                        source={item.reference_image.startsWith("http") ? { uri: item.reference_image, headers: token ? { Authorization: `Bearer ${token}` } : undefined } : item.reference_image}
-                        style={StyleSheet.absoluteFill}
-                        contentFit="cover"
-                      />
-                    </View>
-                  )}
-                  <View style={styles.actionRow}>
-                    <View style={styles.depositRow}>
-                      <Text style={styles.deposit}>DEPOSIT {fmtPHP(item.deposit)}</Text>
-                      <View style={[
-                        styles.payPill,
-                        item.payment_status === "paid" ? styles.payPillPaid :
-                        item.payment_status === "refunded" ? styles.payPillRefunded :
-                        styles.payPillUnpaid,
-                      ]}>
-                        <Icon
-                          name={item.payment_status === "paid" ? "check" : item.payment_status === "refunded" ? "rotate-ccw" : "clock"}
-                          size={10}
-                          color={item.payment_status === "paid" ? colors.onSuccess : item.payment_status === "refunded" ? colors.info : colors.warning}
-                        />
-                        <Text style={[styles.payPillText, {
-                          color: item.payment_status === "paid" ? colors.onSuccess :
-                                 item.payment_status === "refunded" ? colors.info :
-                                 colors.warning,
-                        }]}>
-                          {(item.payment_status || "unpaid").toUpperCase()}
+                  <View style={styles.rowContent}>
+                    <View style={styles.rowTop}>
+                      <Image source={item.artist_avatar} style={styles.avatar} contentFit="cover" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.artistName}>{item.artist_name.toUpperCase()}</Text>
+                        <Text style={styles.timeRow}>
+                          <Icon name="clock" size={11} color={colors.muted} />  {item.time_slot} · {item.estimated_hours}H
                         </Text>
                       </View>
+                      <View style={[styles.statusPill, item.status === "cancelled" && styles.statusCancelled]}>
+                        <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+                      </View>
                     </View>
-                    <View style={styles.rowActions}>
-                      {item.status === "cancelled" || item.date < today ? (
-                        <Pressable
-                          testID={`book-again-${item.id}`}
-                          onPress={() => router.push(`/book/${item.artist_id}`)}
-                          style={styles.bookAgainBtn}
-                        >
-                          <Icon name="rotate-cw" size={11} color={colors.onBrand} />
-                          <Text style={styles.bookAgainText}>{t("bookings.bookAgain")}</Text>
-                        </Pressable>
-                      ) : (
-                        <Pressable testID={`cancel-booking-${item.id}`} onPress={() => cancel(item.id)} style={styles.cancelBtn}>
-                          <Text style={styles.cancelText}>{t("bookings.cancel")}</Text>
-                        </Pressable>
-                      )}
+                    <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
+                    {item.reference_image && (
+                      <View style={styles.refThumb}>
+                        <Image source={item.reference_image.startsWith("http") ? { uri: item.reference_image, headers: token ? { Authorization: `Bearer ${token}` } : undefined } : item.reference_image} style={StyleSheet.absoluteFill} contentFit="cover" />
+                      </View>
+                    )}
+                    <View style={styles.actionRow}>
+                      <View style={styles.depositRow}>
+                        <Text style={styles.deposit}>DEPOSIT {fmtPHP(item.deposit)}</Text>
+                        <View style={[styles.payPill, item.payment_status === "paid" ? styles.payPillPaid : isGcashPending ? styles.payPillPending : item.payment_status === "refunded" ? styles.payPillRefunded : styles.payPillUnpaid]}>
+                          <Icon name={item.payment_status === "paid" ? "check" : isGcashPending ? "clock" : item.payment_status === "refunded" ? "rotate-ccw" : "alert-circle"} size={10} color={item.payment_status === "paid" ? colors.onSuccess : item.payment_status === "refunded" ? colors.info : colors.warning} />
+                          <Text style={[styles.payPillText, { color: item.payment_status === "paid" ? colors.onSuccess : item.payment_status === "refunded" ? colors.info : colors.warning }]}>{paymentLabel}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.rowActions}>
+                        {item.status === "cancelled" || item.date < today ? (
+                          <Pressable testID={`book-again-${item.id}`} onPress={() => router.push(`/book/${item.artist_id}`)} style={styles.bookAgainBtn}>
+                            <Icon name="rotate-cw" size={11} color={colors.onBrand} />
+                            <Text style={styles.bookAgainText}>{t("bookings.bookAgain")}</Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable testID={`cancel-booking-${item.id}`} onPress={() => cancel(item.id)} style={styles.cancelBtn}>
+                            <Text style={styles.cancelText}>{t("bookings.cancel")}</Text>
+                          </Pressable>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
                 </View>
               </View>
             );
@@ -246,6 +218,7 @@ const styles = StyleSheet.create({
   deposit: { color: colors.brand, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   payPill: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 3 },
   payPillPaid: { borderColor: colors.success, backgroundColor: "rgba(0,138,46,0.15)" },
+  payPillPending: { borderColor: colors.warning, backgroundColor: "rgba(255,170,0,0.10)" },
   payPillUnpaid: { borderColor: colors.warning },
   payPillRefunded: { borderColor: colors.info, backgroundColor: colors.surfaceSecondary },
   payPillText: { fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
