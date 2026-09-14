@@ -3,7 +3,6 @@ import importlib.abc
 import importlib.machinery
 import sys
 
-
 class _ServerLoader(importlib.abc.Loader):
     def __init__(self, spec):
         self.spec = spec
@@ -25,10 +24,11 @@ class _ServerLoader(importlib.abc.Loader):
             install_email_verification(module)
             from email_verification_route_fix import install as install_email_route_fix
             install_email_route_fix(module)
+            from gcash_only_patch import install as install_gcash_only
+            install_gcash_only(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
-
 
 class _ServerFinder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -39,6 +39,5 @@ class _ServerFinder(importlib.abc.MetaPathFinder):
             return None
         spec.loader = _ServerLoader(spec)
         return spec
-
 
 sys.meta_path.insert(0, _ServerFinder())
