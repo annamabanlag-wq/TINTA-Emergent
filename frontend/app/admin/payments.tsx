@@ -5,6 +5,7 @@ import { useSession } from "../../src/session";
 import { useI18n } from "../../src/i18n";
 import { colors, spacing } from "../../src/theme";
 import AdminHeader from "../../src/AdminHeader";
+import ImageViewer from "../../src/ImageViewer";
 import { adminApi, AdminBooking, GCashPayment } from "../../src/adminApi";
 import { fmtPHP } from "../../src/currency";
 
@@ -17,6 +18,9 @@ export default function AdminPaymentsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 const [gcashRows, setGcashRows] = useState<GCashPayment[]>([]);
 const [gcashLoading, setGcashLoading] = useState(true);
+  const [viewerVisible, setViewerVisible] = useState(false);
+const [viewerImages, setViewerImages] = useState<string[]>([]);
+const [viewerIndex, setViewerIndex] = useState(0);
   const load = useCallback(async () => {
     if (!token) return;
     try {
@@ -113,10 +117,18 @@ const handleGcashReview = async (bookingId: string, approved: boolean) => {
         </Text>
 
         {item.gcash_receipt_url ? (
-          <Text style={{ color: colors.brand, marginTop: 4 }}>
-            Receipt: {item.gcash_receipt_url}
-          </Text>
-        ) : null}
+  <TouchableOpacity
+    onPress={() => {
+      setViewerImages([item.gcash_receipt_url!]);
+      setViewerIndex(0);
+      setViewerVisible(true);
+    }}
+  >
+    <Text style={{ color: colors.brand, marginTop: 4 }}>
+      📷 View GCash Receipt
+    </Text>
+  </TouchableOpacity>
+) : null}
 
         <View style={{ flexDirection: "row", marginTop: 12 }}>
           <TouchableOpacity
@@ -192,6 +204,13 @@ const handleGcashReview = async (bookingId: string, approved: boolean) => {
           ListEmptyComponent={<Text style={styles.empty}>No payments yet</Text>}
         />
       )}
+      <ImageViewer
+        images={viewerImages}
+        index={viewerIndex}
+        visible={viewerVisible}
+        onClose={() => setViewerVisible(false)}
+        caption="GCash Receipt"
+      />
     </View>
   );
 }
