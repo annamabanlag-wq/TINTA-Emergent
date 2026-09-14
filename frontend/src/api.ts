@@ -92,7 +92,68 @@ export type Thread = {
   artist_id: string;
   artist_name: string;
   artist_avatar: string;
-  last_message?: string;
-  last_message_at?: string;
-  unread_count?: number;
+  last_message: string;
+  last_at: string;
 };
+export type Message = {
+  id: string;
+  thread_id: string;
+  from_user_id: string;
+  from_role: "user" | "artist";
+  text: string;
+  created_at: string;
+};
+
+export type Featured = {
+  artist: Artist;
+  headline: string;
+  story: string;
+  deal_ends_at: string;
+  discount_pct: number;
+};
+
+export type CheckoutSessionOut = {
+  checkout_url: string;
+  session_id: string;
+  mock: boolean;
+};
+
+export type VerifyOut = {
+  paid: boolean;
+  booking_id: string;
+  payment_status: string;
+  mock?: boolean;
+};
+
+export type UploadOut = {
+  url: string;
+  path: string;
+  size: number;
+};
+
+export async function uploadImage(uri: string, token: string, filename = "reference.jpg", file?: File): Promise<UploadOut> {
+  const form = new FormData();
+  // React Native: pass { uri, name, type }
+  if (typeof window !== "undefined") {
+    const blob = file ?? await (await fetch(uri)).blob();
+    form.append(
+      "file",
+      new File([blob], filename, { type: blob.type || "image/jpeg" })
+    );
+  } else {
+    form.append("file", { uri, name: filename, type: "image/jpeg" } as any);
+  }
+  const res = await fetch(`${API_URL}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form as any,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = (data as any)?.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : JSON.stringify(detail ?? `HTTP ${res.status}`)
+    );
+  }
+  return data as UploadOut;
+}
