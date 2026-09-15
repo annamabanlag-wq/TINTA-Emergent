@@ -7,9 +7,10 @@ import { colors, spacing } from "./theme";
 export default function AdminHeader({ title, right, testID }: { title: string; right?: React.ReactNode; testID?: string }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const goToAdminDashboard = () => router.replace("/(tabs)/admin");
   return (
     <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-      <Pressable onPress={() => router.back()} style={styles.back} testID="admin-back" hitSlop={12}>
+      <Pressable onPress={goToAdminDashboard} style={styles.back} testID="admin-back" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back to admin dashboard">
         <Icon name="arrow-left" size={22} color={colors.onSurface} />
       </Pressable>
       <Text style={styles.title} testID={testID ?? "admin-header-title"} numberOfLines={1}>{title}</Text>
