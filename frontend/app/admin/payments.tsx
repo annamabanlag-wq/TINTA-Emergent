@@ -213,6 +213,7 @@ export default function AdminPaymentsScreen() {
         visible={viewerVisible}
         onClose={() => setViewerVisible(false)}
         caption="GCash Receipt"
+        token={token}
       />
     </View>
   );
