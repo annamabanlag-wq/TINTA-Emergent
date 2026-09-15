@@ -16,10 +16,16 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
   else headers.delete("Authorization");
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...requestOptions,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...requestOptions,
+      headers,
+    });
+  } catch {
+    throw new Error("Could not connect to TINTA. Please check your connection and try again.");
+  }
+
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
@@ -146,7 +152,12 @@ export async function uploadImage(uri: string, token: string, filename = "refere
   const form = new FormData();
   // React Native: pass { uri, name, type }
   if (typeof window !== "undefined") {
-    const blob = file ?? await (await fetch(uri)).blob();
+    let blob: Blob;
+    try {
+      blob = file ?? await (await fetch(uri)).blob();
+    } catch {
+      throw new Error("Could not read the selected image. Please choose the receipt again.");
+    }
     form.append(
       "file",
       new File([blob], filename, { type: blob.type || "image/jpeg" })
@@ -154,11 +165,18 @@ export async function uploadImage(uri: string, token: string, filename = "refere
   } else {
     form.append("file", { uri, name: filename, type: "image/jpeg" } as any);
   }
-  const res = await fetch(`${API_URL}/upload`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: form as any,
-  });
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form as any,
+    });
+  } catch {
+    throw new Error("Could not upload the receipt. Please check your connection and try again.");
+  }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && typeof window !== "undefined") {
