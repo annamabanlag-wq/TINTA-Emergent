@@ -46,6 +46,17 @@ type Ctx = {
 
 const SessionContext = createContext<Ctx | null>(null);
 
+function isArtistHost() {
+  if (typeof window !== "undefined") {
+    return window.location.hostname.toLowerCase().includes("tinta-artist");
+  }
+  return false;
+}
+
+function isArtistUser(user: User | null) {
+  return !!user && (user.artist_portal === true || user.role === "artist");
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -68,7 +79,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         try {
           const me = await api<User>("/auth/me", {}, t);
           if (!active) return;
-          setUser(me); setToken(t);
+          if (isArtistHost() && !isArtistUser(me)) {
+            await clearSession();
+          } else {
+            setUser(me); setToken(t);
+          }
         } catch { await clearSession(); }
       }
       if (active) setLoading(false);
@@ -83,6 +98,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const r = await api<AuthOut>(path, { method: "POST", body: JSON.stringify(body) });
     if (!r.access_token) { await clearSession(); return; }
     const me = await api<User>("/auth/me", {}, r.access_token);
+    if (isArtistHost() && !isArtistUser(me)) {
+      await clearSession();
+      throw new Error("This account is a customer account. Please use the TINTA customer site, not the Artist Portal.");
+    }
     if (persist) {
       await writeToken(r.access_token);
       setToken(r.access_token);
