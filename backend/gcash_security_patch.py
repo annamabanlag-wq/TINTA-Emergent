@@ -39,6 +39,7 @@ def install(server_module):
     current_user = server_module.current_user
     require_admin = server_module.require_admin
     get_object = server_module.get_object
+    run_in_threadpool = server_module.run_in_threadpool
     DEPOSIT_AMOUNT_MAJOR = server_module.DEPOSIT_AMOUNT_MAJOR
     test_payment_mode = os.getenv("TEST_PAYMENT_MODE", "false").strip().lower() == "true"
 
@@ -48,7 +49,7 @@ def install(server_module):
         if not path:
             return None
         try:
-            data, _ = await __import__("starlette").concurrency.run_in_threadpool(get_object, path)
+            data, _ = await run_in_threadpool(get_object, path)
             return hashlib.sha256(data).hexdigest()
         except Exception:
             # Do not make an otherwise valid payment fail solely because an old/external
