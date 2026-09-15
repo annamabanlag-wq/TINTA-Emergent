@@ -21,7 +21,7 @@ export default function SignUp() {
     setErr("");
     setBusy(true);
     try {
-      await signUp(email.trim(), password, name.trim());
+      await signUp(email.trim(), password, name.trim(), isArtist ? "artist" : "customer");
       router.replace({ pathname: "/(auth)/verify-email", params: { email: email.trim(), role: isArtist ? "artist" : "customer" } });
     } catch (e: any) {
       setErr(e?.message ?? "Sign up failed");
