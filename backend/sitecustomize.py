@@ -42,6 +42,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_customer_chat_contacts(module)
             from chat_contacts_v2_patch import install as install_chat_contacts_v2
             install_chat_contacts_v2(module)
+            from booking_guard_patch import install as install_booking_guard
+            install_booking_guard(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
