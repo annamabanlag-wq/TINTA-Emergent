@@ -51,6 +51,8 @@ export default function BookScreen() {
   const [serviceAddress, setServiceAddress] = useState("");
   const [gcashReference, setGcashReference] = useState("");
   const [gcashReceiptUrl, setGcashReceiptUrl] = useState("");
+  const [gcashReceiptUri, setGcashReceiptUri] = useState<string | null>(null);
+  const [gcashReceiptFile, setGcashReceiptFile] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -84,20 +86,28 @@ export default function BookScreen() {
   const canStep1 = !!date && !!time;
   const canStep2 = desc.trim().length > 5 && (!homeService || serviceAddress.trim().length > 5);
 
-  const pickImage = async () => {
+  const pickImage = async (kind: "reference" | "receipt") => {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { setErr("Photo library permission needed to add references"); return; }
+      if (!perm.granted) { setErr("Photo library permission needed to add images"); return; }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7, allowsEditing: false });
       if (result.canceled) return;
       const asset = result.assets?.[0];
-      if (asset?.uri) { setRefUri(asset.uri); setRefFile(asset.file ?? null); }
+      if (!asset?.uri) return;
+      if (kind === "reference") {
+        setRefUri(asset.uri);
+        setRefFile(asset.file ?? null);
+      } else {
+        setGcashReceiptUri(asset.uri);
+        setGcashReceiptFile(asset.file ?? null);
+      }
     } catch (e: any) { setErr(e?.message ?? "Could not pick image"); }
   };
 
   const createBookingAndPay = async () => {
     if (!token) { setErr("Please sign in before booking."); return; }
     if (!gcashReference.trim()) { setErr("Please enter your GCash reference number."); return; }
+    if (!gcashReceiptUri && !gcashReceiptUrl.trim()) { setErr("Please upload your GCash payment receipt."); return; }
     setErr(""); setBusy(true);
     try {
       let refUrl: string | null = refUri;
@@ -106,6 +116,15 @@ export default function BookScreen() {
         try {
           const up = await uploadImage(refUrl, token, "reference.jpg", refFile ?? undefined);
           refUrl = up.url;
+        } finally { setUploading(false); }
+      }
+
+      let receiptUrl = gcashReceiptUrl.trim() || null;
+      if (gcashReceiptUri && !gcashReceiptUri.startsWith("http")) {
+        setUploading(true);
+        try {
+          const up = await uploadImage(gcashReceiptUri, token, "gcash-receipt.jpg", gcashReceiptFile ?? undefined);
+          receiptUrl = up.url;
         } finally { setUploading(false); }
       }
 
@@ -128,7 +147,7 @@ export default function BookScreen() {
         body: JSON.stringify({
           booking_id: booking.id,
           reference_number: gcashReference.trim(),
-          receipt_url: gcashReceiptUrl.trim() || null,
+          receipt_url: receiptUrl,
         }),
       }, token);
 
@@ -211,12 +230,15 @@ export default function BookScreen() {
           <TextInput testID="book-description-input" value={desc} onChangeText={setDesc} multiline placeholder="Tell the artist what you want..." placeholderTextColor={colors.muted} style={styles.textarea} />
           <Text style={styles.hint}>Minimum 6 characters.</Text>
           <Text style={styles.label}>REFERENCE IMAGE</Text>
-          {refUri ? <View style={styles.refWrap}><Image source={refUri} style={StyleSheet.absoluteFill} contentFit="cover" /><Pressable testID="remove-ref-image" onPress={() => { setRefUri(null); setRefFile(null); }} style={styles.refRemove}><Icon name="x" size={16} color={colors.onSurface} /></Pressable></View> : <Pressable testID="pick-ref-image" onPress={pickImage} style={styles.pickBtn}><Icon name="image" size={24} color={colors.brand} /><Text style={styles.pickText}>ADD REFERENCE IMAGE</Text></Pressable>}
+          {refUri ? <View style={styles.refWrap}><Image source={refUri} style={StyleSheet.absoluteFill} contentFit="cover" /><Pressable testID="remove-ref-image" onPress={() => { setRefUri(null); setRefFile(null); }} style={styles.refRemove}><Icon name="x" size={16} color={colors.onSurface} /></Pressable></View> : <Pressable testID="pick-ref-image" onPress={() => pickImage("reference")} style={styles.pickBtn}><Icon name="image" size={24} color={colors.brand} /><Text style={styles.pickText}>ADD REFERENCE IMAGE</Text></Pressable>}
         </>}
 
         {step === 3 && <>
           <View style={styles.summary}><Text style={styles.blockTitle}>BOOKING SUMMARY</Text><SummaryRow k="ARTIST" v={artist.name} /><SummaryRow k="DATE" v={date} /><SummaryRow k="TIME" v={time} /><SummaryRow k="HOURS" v={`${hours}H`} /><SummaryRow k="RATE" v={`${fmtPHP(artist.rate_per_hour)}/HR`} />{serviceFee > 0 && <SummaryRow k="HOME SERVICE" v={`+${fmtPHP(serviceFee)}`} />}<View style={styles.divider} /><SummaryRow k="ESTIMATED TOTAL" v={fmtPHP(total)} big /><SummaryRow k="GCASH DEPOSIT DUE" v={fmtPHP(DEPOSIT)} accent /></View>
-          <View style={styles.summary}><Text style={styles.blockTitle}>GCASH PAYMENT</Text><Text style={styles.paymentTitle}>SEND {fmtPHP(DEPOSIT)} TO</Text><Image source={require("../../assets/GCash-MyQR-12092026210418.PNG.jpg")} style={styles.qr} contentFit="contain" /><Text style={styles.merchant}>TINTA</Text><Text style={styles.phone}>GCash: 09381447214</Text><Text style={styles.payInstruction}>Send the required GCash deposit, then enter your reference number below. Your payment will remain pending until an admin verifies it.</Text><TextInput testID="gcash-reference-input" value={gcashReference} onChangeText={setGcashReference} placeholder="GCash Reference Number *" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" /><TextInput testID="gcash-receipt-input" value={gcashReceiptUrl} onChangeText={setGcashReceiptUrl} placeholder="Receipt URL (optional)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" /></View>
+          <View style={styles.summary}><Text style={styles.blockTitle}>GCASH PAYMENT</Text><Text style={styles.paymentTitle}>SEND {fmtPHP(DEPOSIT)} TO</Text><Image source={require("../../assets/GCash-MyQR-12092026210418.PNG.jpg")} style={styles.qr} contentFit="contain" /><Text style={styles.merchant}>TINTA</Text><Text style={styles.phone}>GCash: 09381447214</Text><Text style={styles.payInstruction}>Send the required GCash deposit, then upload your payment receipt and enter your reference number below. Your payment will remain pending until an admin verifies it.</Text><TextInput testID="gcash-reference-input" value={gcashReference} onChangeText={setGcashReference} placeholder="GCash Reference Number *" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="characters" />
+            {gcashReceiptUri ? <View style={styles.refWrap}><Image source={gcashReceiptUri} style={StyleSheet.absoluteFill} contentFit="cover" /><Pressable testID="remove-gcash-receipt" onPress={() => { setGcashReceiptUri(null); setGcashReceiptFile(null); }} style={styles.refRemove}><Icon name="x" size={16} color={colors.onSurface} /></Pressable></View> : <Pressable testID="pick-gcash-receipt" onPress={() => pickImage("receipt")} style={styles.pickBtn}><Icon name="camera" size={24} color={colors.brand} /><Text style={styles.pickText}>UPLOAD GCASH RECEIPT *</Text></Pressable>}
+            <TextInput testID="gcash-receipt-input" value={gcashReceiptUrl} onChangeText={setGcashReceiptUrl} placeholder="Receipt URL (optional if uploaded)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" />
+          </View>
           {!!err && <Text style={styles.err}>{err.toUpperCase()}</Text>}
         </>}
       </ScrollView>
