@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Modal, Pressable, StyleSheet, Text, Dimensions, Platform, ScrollView } from "react-native";
+import { View, Modal, Pressable, StyleSheet, Text, Dimensions, Platform, ScrollView, Text as RNText } from "react-native";
 import { Image } from "expo-image";
 import Icon from "@react-native-vector-icons/feather";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
@@ -17,25 +17,36 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   caption?: string;
+  token?: string | null;
 };
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
-// Uploaded files can be returned as absolute URLs or as backend-relative paths.
-// The admin static site must never try to resolve a relative receipt URL against
-// tinta-admin.onrender.com; resolve it against the actual TINTA API instead.
-function resolveImageUri(uri: string): string {
+// Uploaded files are protected by the backend /api/files endpoint. The endpoint
+// accepts the session token as ?token= because browser image requests cannot add
+// an Authorization header. Preserve absolute public URLs, but attach the token
+// when the URL points at TINTA's protected file endpoint.
+function resolveImageUri(uri: string, token?: string | null): string {
   const value = String(uri || "").trim();
   if (!value) return "";
-  if (/^https?:\/\//i.test(value) || value.startsWith("data:") || value.startsWith("blob:")) {
-    return value;
+
+  let resolved = value;
+  if (!/^https?:\/\//i.test(value) && !value.startsWith("data:") && !value.startsWith("blob:")) {
+    if (value.startsWith("/")) {
+      resolved = `${API_URL}${value.startsWith("/api/") ? value.slice(4) : value}`;
+    } else {
+      resolved = `${API_URL}/${value.replace(/^\/+/, "")}`;
+    }
   }
-  if (value.startsWith("/")) return `${API_URL}${value.startsWith("/api/") ? value.slice(4) : value}`;
-  return `${API_URL}/${value.replace(/^\/+/, "")}`;
+
+  if (token && /\/api\/files\//i.test(resolved) && !/[?&]token=/.test(resolved)) {
+    resolved += `${resolved.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  }
+  return resolved;
 }
 
-function ZoomableImage({ uri }: { uri: string }) {
-  const sourceUri = resolveImageUri(uri);
+function ZoomableImage({ uri, token }: { uri: string; token?: string | null }) {
+  const sourceUri = resolveImageUri(uri, token);
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -97,14 +108,13 @@ function ZoomableImage({ uri }: { uri: string }) {
   const fallback = (
     <View style={styles.errorWrap}>
       <Icon name="image-off" size={36} color={colors.muted} />
-      <Text style={styles.errorTitle}>RECEIPT COULD NOT BE LOADED</Text>
-      <Text style={styles.errorText}>The uploaded receipt URL is unavailable.</Text>
+      <RNText style={styles.errorTitle}>RECEIPT COULD NOT BE LOADED</RNText>
+      <RNText style={styles.errorText}>The uploaded receipt URL is unavailable.</RNText>
     </View>
   );
 
   if (!sourceUri) return fallback;
 
-  // Web fallback: use a real URL object and make image loading errors visible.
   if (Platform.OS === "web") {
     return (
       <ScrollView
@@ -119,7 +129,6 @@ function ZoomableImage({ uri }: { uri: string }) {
           source={{ uri: sourceUri }}
           style={styles.webImage}
           contentFit="contain"
-          onError={() => undefined}
         />
       </ScrollView>
     );
@@ -134,7 +143,7 @@ function ZoomableImage({ uri }: { uri: string }) {
   );
 }
 
-export default function ImageViewer({ images, index, visible, onClose, caption }: Props) {
+export default function ImageViewer({ images, index, visible, onClose, caption, token }: Props) {
   const [current, setCurrent] = React.useState(index);
   useEffect(() => { if (visible) setCurrent(index); }, [visible, index]);
   if (!visible) return null;
@@ -145,7 +154,7 @@ export default function ImageViewer({ images, index, visible, onClose, caption }
   return (
     <Modal visible={visible} transparent={false} animationType="fade" onRequestClose={onClose}>
       <View style={styles.container} testID="image-viewer">
-        <ZoomableImage key={current} uri={images[current]} />
+        <ZoomableImage key={current} uri={images[current]} token={token} />
         <Pressable testID="viewer-close" onPress={onClose} style={styles.closeBtn}>
           <Icon name="x" size={24} color={colors.onSurface} />
         </Pressable>
@@ -153,9 +162,9 @@ export default function ImageViewer({ images, index, visible, onClose, caption }
           <Pressable testID="viewer-prev" onPress={goPrev} style={styles.navBtn} disabled={total <= 1}>
             <Icon name="chevron-left" size={20} color={total <= 1 ? colors.muted : colors.onSurface} />
           </Pressable>
-          <Text style={styles.caption} numberOfLines={1}>
+          <RNText style={styles.caption} numberOfLines={1}>
             {current + 1} / {total}{caption ? ` · ${caption}` : ""}
-          </Text>
+          </RNText>
           <Pressable testID="viewer-next" onPress={goNext} style={styles.navBtn} disabled={total <= 1}>
             <Icon name="chevron-right" size={20} color={total <= 1 ? colors.muted : colors.onSurface} />
           </Pressable>
