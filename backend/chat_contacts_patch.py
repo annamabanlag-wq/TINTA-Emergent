@@ -12,6 +12,23 @@ def install(server):
         artist = await db.artists.find_one({"artist_user_id": user["id"], "active": {"$ne": False}}, {"_id": 0, "id": 1})
         return {"id": user["id"], "role": "artist" if artist else "customer"}
 
+    async def resolve_user_id(record):
+        """Resolve an artist's login user id from all legacy/current linkage fields."""
+        uid = record.get("artist_user_id") or record.get("user_id")
+        if uid:
+            return uid
+        email = str(record.get("email") or "").strip().lower()
+        if email:
+            owner = await db.users.find_one({"email": email}, {"_id": 0, "id": 1})
+            if owner:
+                return owner.get("id")
+        name = str(record.get("name") or "").strip()
+        if name:
+            owner = await db.users.find_one({"name": name}, {"_id": 0, "id": 1})
+            if owner:
+                return owner.get("id")
+        return None
+
     async def contacts(user=Depends(current_user)):
         me = await identity(user)
         out = [{"id": "bot", "name": "TINTA AI", "role": "bot", "avatar": "", "conversation_id": f"bot:{me['id']}"}]
@@ -28,21 +45,60 @@ def install(server):
             for a in unique_admins:
                 out.append({"id": a["id"], "name": a.get("name", "TINTA Admin"), "role": "admin", "avatar": "", "conversation_id": f"dm:{':'.join(sorted([me['id'], a['id']]))}"})
 
+        # Customers and admins can start a direct message with every active artist.
         if me["role"] in ("customer", "admin"):
-            artists = await db.artists.find({"active": {"$ne": False}}, {"_id": 0, "id": 1, "artist_user_id": 1, "name": 1, "avatar": 1}).to_list(500)
-            approved = await db.artist_applications.find({"status": {"$regex": "^approved$", "$options": "i"}}, {"_id": 0, "artist_id": 1, "user_id": 1, "name": 1, "avatar": 1}).to_list(500)
-            by_user = {a.get("artist_user_id"): a for a in artists if a.get("artist_user_id")}
-            for a in approved:
-                uid = a.get("user_id")
-                if uid and uid not in by_user:
-                    by_user[uid] = {"id": a.get("artist_id") or uid, "artist_user_id": uid, "name": a.get("name") or "Artist", "avatar": a.get("avatar", "")}
-            seen_artist_users = set()
-            for a in list(by_user.values()):
-                uid = a.get("artist_user_id")
-                if not uid or uid in seen_artist_users:
+            raw_artists = await db.artists.find(
+                {"active": {"$ne": False}},
+                {"_id": 0, "id": 1, "artist_user_id": 1, "user_id": 1, "email": 1, "name": 1, "avatar": 1},
+            ).to_list(500)
+            approved = await db.artist_applications.find(
+                {"status": {"$regex": "^approved$", "$options": "i"}},
+                {"_id": 0, "artist_id": 1, "user_id": 1, "email": 1, "name": 1, "avatar": 1},
+            ).to_list(500)
+
+            # Start with actual artist records, but repair missing user links from email/name.
+            records = []
+            seen_users = set()
+            seen_artist_ids = set()
+            for artist in raw_artists:
+                uid = await resolve_user_id(artist)
+                if not uid or uid == me["id"] or uid in seen_users:
                     continue
-                seen_artist_users.add(uid)
-                out.append({"id": a.get("id", uid), "name": a.get("name", "Artist"), "role": "artist", "avatar": a.get("avatar", ""), "conversation_id": f"dm:{':'.join(sorted([me['id'], uid]))}"})
+                aid = artist.get("id") or uid
+                if aid in seen_artist_ids:
+                    continue
+                seen_users.add(uid)
+                seen_artist_ids.add(aid)
+                records.append({
+                    "id": aid,
+                    "artist_user_id": uid,
+                    "name": artist.get("name") or "Artist",
+                    "avatar": artist.get("avatar") or "",
+                })
+
+            # Approved applications are a recovery source if the artist document is stale/missing.
+            for a in approved:
+                uid = await resolve_user_id(a)
+                if not uid or uid == me["id"] or uid in seen_users:
+                    continue
+                aid = a.get("artist_id") or uid
+                seen_users.add(uid)
+                seen_artist_ids.add(aid)
+                records.append({
+                    "id": aid,
+                    "artist_user_id": uid,
+                    "name": a.get("name") or "Artist",
+                    "avatar": a.get("avatar") or "",
+                })
+
+            for a in records:
+                out.append({
+                    "id": a["id"],
+                    "name": a["name"],
+                    "role": "artist",
+                    "avatar": a.get("avatar", ""),
+                    "conversation_id": f"dm:{':'.join(sorted([me['id'], a['artist_user_id']]))}",
+                })
 
         if me["role"] == "artist":
             artist = await db.artists.find_one({"artist_user_id": me["id"]}, {"_id": 0, "id": 1})
@@ -67,6 +123,6 @@ def install(server):
                 deduped.append(item)
         return deduped
 
-    # Replace the original chat contacts route so the hardened recovery logic is used.
+    # Replace the original contacts route so legacy artist records are recoverable too.
     app.routes[:] = [r for r in app.routes if not (getattr(r, "path", None) == "/api/chat/contacts" and "GET" in getattr(r, "methods", set()))]
     app.add_api_route("/api/chat/contacts", contacts, methods=["GET"])
