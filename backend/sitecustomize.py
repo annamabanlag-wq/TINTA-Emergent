@@ -16,6 +16,8 @@ class _ServerLoader(importlib.abc.Loader):
     def exec_module(self, module):
         self.loader.exec_module(module)
         try:
+            from cors_patch import install as install_cors
+            install_cors(module)
             from artist_applications_patch import install as install_artist
             install_artist(module)
             from email_validation_patch import install as install_email_validation
