@@ -54,7 +54,8 @@ function isArtistHost() {
 }
 
 function isArtistUser(user: User | null) {
-  return !!user && (user.artist_portal === true || user.role === "artist");
+  const account = user as (User & { artist_portal?: boolean; role?: string }) | null;
+  return !!account && (account.artist_portal === true || account.role === "artist");
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
