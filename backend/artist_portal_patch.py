@@ -18,6 +18,20 @@ def install(server):
     class AvailabilityIn(BaseModel):
         blocked_dates: List[str] = Field(default_factory=list, max_length=366)
 
+    class ProfileIn(BaseModel):
+        name: Optional[str] = Field(default=None, max_length=120)
+        handle: Optional[str] = Field(default=None, max_length=80)
+        city: Optional[str] = Field(default=None, max_length=120)
+        studio: Optional[str] = Field(default=None, max_length=160)
+        styles: Optional[List[str]] = Field(default=None, max_length=30)
+        bio: Optional[str] = Field(default=None, max_length=2000)
+        rate_per_hour: Optional[int] = Field(default=None, ge=0, le=1000000)
+        phone: Optional[str] = Field(default=None, max_length=40)
+        service_area: Optional[str] = Field(default=None, max_length=200)
+        avatar: Optional[str] = Field(default=None, max_length=2000)
+        hero: Optional[str] = Field(default=None, max_length=2000)
+        portfolio: Optional[List[str]] = Field(default=None, max_length=30)
+
     async def artist_me(user=Depends(current_user)):
         artist = await get_artist(user)
         pending = await db.earnings_ledger.aggregate([
@@ -63,7 +77,34 @@ def install(server):
         await db.artists.update_one({"id": artist["id"]}, {"$set": {"blocked_dates": clean, "updated_at": now_iso()}})
         return {"blocked_dates": clean}
 
+    async def update_profile(body: ProfileIn, user=Depends(current_user)):
+        artist = await get_artist(user)
+        updates = body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else body.dict(exclude_none=True)
+        if "name" in updates:
+            updates["name"] = updates["name"].strip()
+        if "handle" in updates:
+            updates["handle"] = updates["handle"].strip().lstrip("@").lower()
+        for key in ("city", "studio", "bio", "phone", "service_area", "avatar", "hero"):
+            if key in updates and isinstance(updates[key], str):
+                updates[key] = updates[key].strip()
+        if "styles" in updates:
+            updates["styles"] = sorted(set(x.strip() for x in updates["styles"] if isinstance(x, str) and x.strip()))
+        if "portfolio" in updates:
+            updates["portfolio"] = [x.strip() for x in updates["portfolio"] if isinstance(x, str) and x.strip()]
+        if not updates.get("name") or not updates.get("handle") or not updates.get("city") or not updates.get("studio"):
+            raise HTTPException(400, "Name, handle, city, and studio are required")
+        if "bio" in updates and len(updates["bio"]) < 10:
+            raise HTTPException(400, "Bio must be at least 10 characters")
+        if "handle" in updates:
+            conflict = await db.artists.find_one({"handle": updates["handle"], "id": {"$ne": artist["id"]}}, {"_id": 0, "id": 1})
+            if conflict:
+                raise HTTPException(409, "That artist handle is already in use")
+        updates["updated_at"] = now_iso()
+        await db.artists.update_one({"id": artist["id"]}, {"$set": updates})
+        return await db.artists.find_one({"id": artist["id"]}, {"_id": 0})
+
     app.add_api_route("/api/artist/me", artist_me, methods=["GET"])
     app.add_api_route("/api/artist/bookings", artist_bookings, methods=["GET"])
     app.add_api_route("/api/artist/earnings", artist_earnings, methods=["GET"])
     app.add_api_route("/api/artist/availability", update_availability, methods=["PATCH"])
+    app.add_api_route("/api/artist/profile", update_profile, methods=["PATCH"])
