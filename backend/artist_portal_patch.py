@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Response
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
@@ -8,6 +8,7 @@ def install(server):
     db = server.db
     current_user = server.current_user
     now_iso = server.now_iso
+    get_object = server.__dict__.get("get_object")
 
     async def get_artist(user):
         artist = await db.artists.find_one({"artist_user_id": user["id"]}, {"_id": 0})
@@ -103,8 +104,27 @@ def install(server):
         await db.artists.update_one({"id": artist["id"]}, {"$set": updates})
         return await db.artists.find_one({"id": artist["id"]}, {"_id": 0})
 
+    async def public_artist_portfolio(path: str):
+        if not path or path.startswith("/") or ".." in path or not get_object:
+            raise HTTPException(404, "Portfolio image not found")
+        marker = f"/api/artist/portfolio/{path}"
+        artist = await db.artists.find_one(
+            {"active": {"$ne": False}, "portfolio": marker},
+            {"_id": 0, "id": 1},
+        )
+        if not artist:
+            raise HTTPException(404, "Portfolio image not found")
+        try:
+            data, content_type = get_object(path)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(404, "Portfolio image not found")
+        return Response(content=data, media_type=content_type or "image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
+
     app.add_api_route("/api/artist/me", artist_me, methods=["GET"])
     app.add_api_route("/api/artist/bookings", artist_bookings, methods=["GET"])
     app.add_api_route("/api/artist/earnings", artist_earnings, methods=["GET"])
     app.add_api_route("/api/artist/availability", update_availability, methods=["PATCH"])
     app.add_api_route("/api/artist/profile", update_profile, methods=["PATCH"])
+    app.add_api_route("/api/artist/portfolio/{path:path}", public_artist_portfolio, methods=["GET"])
