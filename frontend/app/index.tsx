@@ -5,6 +5,14 @@ import { colors } from "../src/theme";
 
 const APP_ROLE = process.env.EXPO_PUBLIC_APP_ROLE ?? "customer";
 
+function isArtistDeployment() {
+  if (APP_ROLE === "artist") return true;
+  if (typeof window !== "undefined") {
+    return window.location.hostname.toLowerCase().includes("tinta-artist");
+  }
+  return false;
+}
+
 export default function Index() {
   const { user, loading } = useSession();
   if (loading) {
@@ -15,8 +23,8 @@ export default function Index() {
     );
   }
 
-  if (APP_ROLE === "artist") {
-    return <Redirect href={user ? "/artist/apply" : "/(auth)/sign-up?role=artist"} />;
+  if (isArtistDeployment()) {
+    return <Redirect href={user ? "/artist/portal" : "/(auth)/sign-in?next=artist"} />;
   }
 
   if (APP_ROLE === "admin") {
