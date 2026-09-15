@@ -102,17 +102,35 @@ def install(server):
                 out.append({"id": a["id"], "name": a["name"], "role": "artist", "avatar": a["avatar"], "conversation_id": f"dm:{':'.join(sorted([me_id, a['artist_user_id']]))}"})
 
         if role == "artist":
+            # Determine artist identities from the actual artist records first.
+            # Do not trust only the users.role/artist_portal flags because older
+            # accounts can have stale role metadata and disappear from Messages.
+            artist_user_ids = {me_id}
+            active_artists = await db.artists.find(
+                {"active": {"$ne": False}},
+                {"_id": 0, "id": 1, "artist_user_id": 1, "user_id": 1, "email": 1, "name": 1},
+            ).to_list(500)
+            for artist in active_artists:
+                uid = await resolve_artist_user_id(artist)
+                if uid:
+                    artist_user_ids.add(uid)
+
+            approved = await db.artist_applications.find(
+                {"status": {"$regex": "^approved$", "$options": "i"}},
+                {"_id": 0, "artist_id": 1, "user_id": 1, "email": 1, "name": 1},
+            ).to_list(500)
+            for artist in approved:
+                uid = await resolve_artist_user_id(artist)
+                if uid:
+                    artist_user_ids.add(uid)
+
             customers = await db.users.find(
-                {
-                    "is_admin": {"$ne": True},
-                    "artist_portal": {"$ne": True},
-                    "role": {"$nin": ["artist", "ARTIST"]},
-                },
+                {"is_admin": {"$ne": True}},
                 {"_id": 0, "id": 1, "name": 1},
             ).to_list(500)
             for c in customers:
                 cid = c.get("id")
-                if cid and cid != me_id:
+                if cid and cid != me_id and cid not in artist_user_ids:
                     out.append({"id": cid, "name": c.get("name") or "Customer", "role": "customer", "avatar": "", "conversation_id": f"dm:{':'.join(sorted([me_id, cid]))}"})
 
         if role == "admin":
@@ -128,7 +146,7 @@ def install(server):
             if item["conversation_id"] not in seen:
                 seen.add(item["conversation_id"])
                 deduped.append(item)
-        print(f"TINTA FORCE CONTACTS: role={role} total={len(deduped)} artists={[x['name'] for x in deduped if x.get('role') == 'artist']}")
+        print(f"TINTA FORCE CONTACTS: role={role} total={len(deduped)} artists={[x['name'] for x in deduped if x.get('role') == 'artist']} customers={[x['name'] for x in deduped if x.get('role') == 'customer']}")
         return deduped
 
     app.routes[:] = [r for r in app.routes if not (getattr(r, "path", None) == "/api/chat/contacts" and "GET" in getattr(r, "methods", set()))]
