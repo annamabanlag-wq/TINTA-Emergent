@@ -24,7 +24,7 @@ export default function Index() {
   }
 
   if (isArtistDeployment()) {
-    return <Redirect href={user ? "/artist/portal" : "/(auth)/sign-in?next=artist"} />;
+    return <Redirect href="/(auth)/sign-in?next=artist" />;
   }
 
   if (APP_ROLE === "admin") {
