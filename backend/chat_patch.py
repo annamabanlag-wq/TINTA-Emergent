@@ -29,15 +29,44 @@ def install(server):
             return {"id": user["id"], "name": artist.get("name") or user.get("name", "Artist"), "role": "artist", "avatar": artist.get("avatar", "")}
         return {"id": user["id"], "name": user.get("name", "Customer"), "role": "customer", "avatar": ""}
 
+    async def artist_contact_records():
+        """Return active artists, with approved applications as a safe recovery path."""
+        artists = await db.artists.find(
+            {"active": {"$ne": False}},
+            {"_id": 0, "id": 1, "artist_user_id": 1, "name": 1, "avatar": 1},
+        ).to_list(200)
+        seen_users = {a.get("artist_user_id") for a in artists if a.get("artist_user_id")}
+        approved = await db.artist_applications.find(
+            {"status": "approved"},
+            {"_id": 0, "artist_id": 1, "user_id": 1, "name": 1, "avatar": 1},
+        ).to_list(200)
+        for a in approved:
+            uid = a.get("user_id")
+            if not uid or uid in seen_users:
+                continue
+            artists.append({
+                "id": a.get("artist_id") or uid,
+                "artist_user_id": uid,
+                "name": a.get("name") or "Artist",
+                "avatar": a.get("avatar", ""),
+            })
+            seen_users.add(uid)
+        return artists
+
     async def allowed_recipient(user, recipient_id: str, recipient_role: str):
         me = await identity(user)
         if recipient_id == me["id"]:
             raise HTTPException(400, "You cannot message yourself")
         if recipient_role == "artist":
-            artist = await db.artists.find_one({"id": recipient_id, "active": {"$ne": False}}, {"_id": 0, "artist_user_id": 1, "id": 1, "name": 1, "avatar": 1})
+            artist = await db.artists.find_one(
+                {"id": recipient_id, "active": {"$ne": False}},
+                {"_id": 0, "artist_user_id": 1, "id": 1, "name": 1, "avatar": 1},
+            )
             if not artist:
+                artist = next((a for a in await artist_contact_records() if a.get("id") == recipient_id), None)
+            if not artist or not artist.get("artist_user_id"):
                 raise HTTPException(404, "Artist not found")
-            return {"id": artist["artist_user_id"], "public_id": artist["id"], "name": artist.get("name", "Artist"), "role": "artist", "avatar": artist.get("avatar", "")}
+            return {"id": artist["artist_user_id"], "public_id": artist.get("id", artist["artist_user_id"]), "name": artist.get("name", "Artist"), "role": "artist", "avatar": artist.get("avatar", "")}
         target = await db.users.find_one({"id": recipient_id}, {"_id": 0, "id": 1, "name": 1, "is_admin": 1})
         if not target:
             raise HTTPException(404, "User not found")
@@ -51,24 +80,71 @@ def install(server):
     async def contacts(user=Depends(current_user)):
         me = await identity(user)
         out = [{"id": "bot", "name": "TINTA AI", "role": "bot", "avatar": "", "conversation_id": f"bot:{me['id']}"}]
+
+        admins = await db.users.find({"is_admin": True}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(50)
+        unique_admins = []
+        seen_admin_keys = set()
+        for a in admins:
+            key = (a.get("email") or a.get("name") or a.get("id") or "").strip().lower()
+            if key in seen_admin_keys:
+                continue
+            seen_admin_keys.add(key)
+            unique_admins.append(a)
+
         if me["role"] != "admin":
-            admins = await db.users.find({"is_admin": True}, {"_id": 0, "id": 1, "name": 1}).to_list(20)
-            out += [{"id": a["id"], "name": a.get("name", "TINTA Admin"), "role": "admin", "avatar": "", "conversation_id": dm_id(me["id"], a["id"])} for a in admins]
+            out += [
+                {"id": a["id"], "name": a.get("name", "TINTA Admin"), "role": "admin", "avatar": "", "conversation_id": dm_id(me["id"], a["id"])}
+                for a in unique_admins
+            ]
+
         if me["role"] in ("customer", "admin"):
-            artists = await db.artists.find({"active": {"$ne": False}}, {"_id": 0, "id": 1, "artist_user_id": 1, "name": 1, "avatar": 1}).to_list(200)
-            out += [{"id": a["id"], "name": a.get("name", "Artist"), "role": "artist", "avatar": a.get("avatar", ""), "conversation_id": dm_id(me["id"], a["artist_user_id"])} for a in artists if a.get("artist_user_id")]
+            artists = await artist_contact_records()
+            seen_artist_users = set()
+            for a in artists:
+                uid = a.get("artist_user_id")
+                if not uid or uid in seen_artist_users:
+                    continue
+                seen_artist_users.add(uid)
+                out.append({
+                    "id": a.get("id", uid),
+                    "name": a.get("name", "Artist"),
+                    "role": "artist",
+                    "avatar": a.get("avatar", ""),
+                    "conversation_id": dm_id(me["id"], uid),
+                })
+
         if me["role"] == "artist":
             artist = await db.artists.find_one({"artist_user_id": me["id"]}, {"_id": 0, "id": 1})
             if artist:
                 customer_ids = await db.bookings.distinct("user_id", {"artist_id": artist["id"]})
                 customers = await db.users.find({"id": {"$in": customer_ids}, "is_admin": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}).to_list(200)
-                out += [{"id": c["id"], "name": c.get("name", "Customer"), "role": "customer", "avatar": "", "conversation_id": dm_id(me["id"], c["id"])} for c in customers]
-            admins = await db.users.find({"is_admin": True}, {"_id": 0, "id": 1, "name": 1}).to_list(20)
-            out += [{"id": a["id"], "name": a.get("name", "TINTA Admin"), "role": "admin", "avatar": "", "conversation_id": dm_id(me["id"], a["id"])} for a in admins]
+                seen_customers = set()
+                for c in customers:
+                    if c.get("id") and c["id"] not in seen_customers:
+                        seen_customers.add(c["id"])
+                        out.append({"id": c["id"], "name": c.get("name", "Customer"), "role": "customer", "avatar": "", "conversation_id": dm_id(me["id"], c["id"])})
+            out += [
+                {"id": a["id"], "name": a.get("name", "TINTA Admin"), "role": "admin", "avatar": "", "conversation_id": dm_id(me["id"], a["id"])}
+                for a in unique_admins
+            ]
+
         if me["role"] == "admin":
             customers = await db.users.find({"is_admin": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
-            out += [{"id": c["id"], "name": c.get("name", "Customer"), "role": "customer", "avatar": "", "conversation_id": dm_id(me["id"], c["id"])} for c in customers]
-        return out
+            seen_customers = set()
+            for c in customers:
+                if c.get("id") and c["id"] not in seen_customers:
+                    seen_customers.add(c["id"])
+                    out.append({"id": c["id"], "name": c.get("name", "Customer"), "role": "customer", "avatar": "", "conversation_id": dm_id(me["id"], c["id"])})
+
+        deduped = []
+        seen_conversations = set()
+        for item in out:
+            cid = item["conversation_id"]
+            if cid in seen_conversations:
+                continue
+            seen_conversations.add(cid)
+            deduped.append(item)
+        return deduped
 
     async def conversation(conversation_id: str, user=Depends(current_user)):
         me = await identity(user)
@@ -85,6 +161,8 @@ def install(server):
         if not other:
             raise HTTPException(404, "Conversation participant not found")
         artist = await db.artists.find_one({"artist_user_id": other_id}, {"_id": 0, "id": 1, "name": 1, "avatar": 1})
+        if not artist:
+            artist = next((a for a in await artist_contact_records() if a.get("artist_user_id") == other_id), None)
         title = (artist or {}).get("name") or other.get("name", "User")
         role = "artist" if artist else ("admin" if other.get("is_admin") else "customer")
         docs = await db.chat_messages.find({"conversation_id": conversation_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
