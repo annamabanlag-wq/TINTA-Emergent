@@ -30,28 +30,66 @@ def install(server):
         return {"id": user["id"], "name": user.get("name", "Customer"), "role": "customer", "avatar": ""}
 
     async def artist_contact_records():
-        """Return active artists, with approved applications as a safe recovery path."""
-        artists = await db.artists.find(
+        """Return every active/approved artist and resolve its user id, including legacy records."""
+        raw_artists = await db.artists.find(
             {"active": {"$ne": False}},
-            {"_id": 0, "id": 1, "artist_user_id": 1, "name": 1, "avatar": 1},
-        ).to_list(200)
-        seen_users = {a.get("artist_user_id") for a in artists if a.get("artist_user_id")}
+            {"_id": 0, "id": 1, "artist_user_id": 1, "user_id": 1, "email": 1, "name": 1, "handle": 1, "avatar": 1},
+        ).to_list(500)
         approved = await db.artist_applications.find(
-            {"status": "approved"},
-            {"_id": 0, "artist_id": 1, "user_id": 1, "name": 1, "avatar": 1},
-        ).to_list(200)
+            {"status": {"$regex": "^approved$", "$options": "i"}},
+            {"_id": 0, "artist_id": 1, "user_id": 1, "email": 1, "name": 1, "handle": 1, "avatar": 1},
+        ).to_list(500)
+
+        by_artist_id = {a.get("artist_id"): a for a in approved if a.get("artist_id")}
+        by_email = {str(a.get("email", "")).strip().lower(): a for a in approved if a.get("email")}
+        by_name = {str(a.get("name", "")).strip().lower(): a for a in approved if a.get("name")}
+        resolved = []
+        seen_users = set()
+        seen_artist_ids = set()
+
+        for artist in raw_artists:
+            artist_id = artist.get("id")
+            app_record = by_artist_id.get(artist_id)
+            if not app_record and artist.get("email"):
+                app_record = by_email.get(str(artist.get("email")).strip().lower())
+            if not app_record and artist.get("name"):
+                app_record = by_name.get(str(artist.get("name")).strip().lower())
+
+            uid = artist.get("artist_user_id") or artist.get("user_id") or (app_record or {}).get("user_id")
+            if not uid and artist.get("email"):
+                owner = await db.users.find_one({"email": str(artist.get("email")).strip().lower()}, {"_id": 0, "id": 1})
+                uid = (owner or {}).get("id")
+            if not uid:
+                continue
+
+            # If this is an approved artist but the artist record is stale, still make it contactable.
+            if uid in seen_users or artist_id in seen_artist_ids:
+                continue
+            seen_users.add(uid)
+            seen_artist_ids.add(artist_id)
+            resolved.append({
+                "id": artist_id or (app_record or {}).get("artist_id") or uid,
+                "artist_user_id": uid,
+                "name": artist.get("name") or (app_record or {}).get("name") or "Artist",
+                "avatar": artist.get("avatar") or (app_record or {}).get("avatar") or "",
+            })
+
+        # Approved applications are a recovery source when the artist document is missing.
         for a in approved:
             uid = a.get("user_id")
             if not uid or uid in seen_users:
                 continue
-            artists.append({
-                "id": a.get("artist_id") or uid,
+            artist_id = a.get("artist_id") or uid
+            resolved.append({
+                "id": artist_id,
                 "artist_user_id": uid,
                 "name": a.get("name") or "Artist",
                 "avatar": a.get("avatar", ""),
             })
             seen_users.add(uid)
-        return artists
+            seen_artist_ids.add(artist_id)
+
+        return resolved
 
     async def allowed_recipient(user, recipient_id: str, recipient_role: str):
         me = await identity(user)
@@ -60,7 +98,7 @@ def install(server):
         if recipient_role == "artist":
             artist = await db.artists.find_one(
                 {"id": recipient_id, "active": {"$ne": False}},
-                {"_id": 0, "artist_user_id": 1, "id": 1, "name": 1, "avatar": 1},
+                {"_id": 0, "artist_user_id": 1, "user_id": 1, "id": 1, "email": 1, "name": 1, "avatar": 1},
             )
             if not artist:
                 artist = next((a for a in await artist_contact_records() if a.get("id") == recipient_id), None)
