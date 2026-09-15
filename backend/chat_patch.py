@@ -64,6 +64,9 @@ def install(server):
                 out += [{"id": c["id"], "name": c.get("name", "Customer"), "role": "customer", "avatar": "", "conversation_id": dm_id(me["id"], c["id"])} for c in customers]
             admins = await db.users.find({"is_admin": True}, {"_id": 0, "id": 1, "name": 1}).to_list(20)
             out += [{"id": a["id"], "name": a.get("name", "TINTA Admin"), "role": "admin", "avatar": "", "conversation_id": dm_id(me["id"], a["id"])} for a in admins]
+        if me["role"] == "admin":
+            customers = await db.users.find({"is_admin": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
+            out += [{"id": c["id"], "name": c.get("name", "Customer"), "role": "customer", "avatar": "", "conversation_id": dm_id(me["id"], c["id"])} for c in customers]
         return out
 
     async def conversation(conversation_id: str, user=Depends(current_user)):
