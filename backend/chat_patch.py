@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 import uuid
+from datetime import datetime, timezone
 
 
 def install(server):
@@ -89,16 +90,60 @@ def install(server):
         docs = await db.chat_messages.find({"conversation_id": conversation_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
         return {"id": conversation_id, "title": title, "role": role, "messages": docs}
 
-    def bot_reply(text: str) -> str:
-        t = text.lower()
-        if any(x in t for x in ["hello", "hi", "hey", "kumusta"]): return "Hey! 👋 Welcome to TINTA. I can help you with artists, bookings, payments, and general questions."
-        if "book" in t or "appointment" in t: return "Absolutely. Pick an artist, choose an available date and time, then confirm your booking and GCash deposit."
-        if "gcash" in t or "payment" in t: return "TINTA currently uses GCash for payments. After sending the deposit, submit your GCash reference and receipt for admin verification."
-        if "artist" in t: return "You can browse artists by style, open their profile, view their work, and message them directly."
-        if "cancel" in t or "refund" in t: return "I can explain the cancellation policy. For a specific booking or refund issue, message TINTA Admin so the team can review it."
-        if "price" in t or "cost" in t: return "Tattoo pricing depends on the artist and session details. Open an artist profile to see their rate, then message them about your design."
-        if "help" in t: return "Sure. Tell me what you need help with — booking, artists, GCash payment, your account, or messaging."
-        return "I understand. Tell me a little more and I'll help you figure out the next step on TINTA."
+    async def bot_context(user, conversation_id: str) -> dict:
+        """Build a small live context so the simulated assistant can answer personally."""
+        me = await identity(user)
+        context = {"name": me["name"], "role": me["role"], "booking": None, "artist_count": 0}
+        if me["role"] == "customer":
+            try:
+                context["artist_count"] = await db.artists.count_documents({"active": {"$ne": False}})
+                bookings = await db.bookings.find({"user_id": me["id"]}, {"_id": 0, "artist_name": 1, "date": 1, "time_slot": 1, "status": 1, "payment_status": 1}).sort([("date", 1), ("time_slot", 1)]).to_list(100)
+                today = datetime.now(timezone.utc).date().isoformat()
+                future = [b for b in bookings if b.get("date", "") >= today and b.get("status") != "cancelled"]
+                if future:
+                    context["booking"] = future[0]
+            except Exception:
+                pass
+        return context
+
+    async def bot_reply(text: str, user, conversation_id: str) -> str:
+        """Friendly deterministic AI-style assistant; no external LLM or paid API required."""
+        t = text.lower().strip()
+        ctx = await bot_context(user, conversation_id)
+        name = ctx["name"].split(" ")[0] if ctx["name"] else "there"
+
+        greetings = ["hello", "hi", "hey", "kumusta", "good morning", "good afternoon", "good evening"]
+        if any(t == g or t.startswith(g + " ") for g in greetings):
+            return f"Hey {name}! 👋 Welcome to TINTA. I'm here with you. I can help with artists, bookings, GCash payments, or just answer questions. What are you planning for your tattoo?"
+        if any(x in t for x in ["what can you do", "how can you help", "help me"]):
+            return "Of course! 😊 I can help you find an artist, understand booking steps, explain the GCash payment process, check your upcoming booking, and point you to TINTA Admin when something needs a human review."
+        if any(x in t for x in ["my booking", "my appointment", "my schedule", "what is my booking"]):
+            b = ctx.get("booking")
+            if not b:
+                return "I don't see an upcoming booking on your account right now. If you'd like, we can start with choosing an artist and finding an available schedule."
+            payment = b.get("payment_status", "unpaid")
+            payment_text = "your GCash payment is marked paid" if payment == "paid" else "the booking deposit is not marked paid yet"
+            return f"I found your next booking with {b.get('artist_name', 'your artist')} on {b.get('date', 'the scheduled date')} at {b.get('time_slot', 'the scheduled time')}. The booking is {b.get('status', 'pending')} and {payment_text}."
+        if "book" in t or "appointment" in t or "schedule" in t:
+            return "Absolutely 😊 The usual flow is: choose an artist → open their profile and work → choose an available date/time → describe your tattoo → confirm the booking → send the GCash deposit and submit the reference/receipt for admin verification."
+        if "gcash" in t or "payment" in t or "deposit" in t:
+            return "Yes 👍 TINTA currently uses GCash for payments. After your booking, send the required deposit through GCash, then submit your GCash reference number and receipt in TINTA. Admin verifies it before the payment is approved."
+        if "artist" in t or "tattoo artist" in t:
+            count = ctx.get("artist_count", 0)
+            if count:
+                return f"We currently have {count} active artist{'s' if count != 1 else ''} available in TINTA. 🎨 Open an artist profile to see their style and work, then message them directly if you want to discuss your design."
+            return "I'd be happy to help you find an artist. Open the Artists section and look for the style that matches your idea, then you can view their work and message them."
+        if any(x in t for x in ["cancel", "refund"]):
+            return "I can explain the general process, but I don't want to guess about a specific refund. If this is about an existing booking, message TINTA Admin and include your booking details so the team can review it."
+        if any(x in t for x in ["price", "cost", "how much", "rate"]):
+            return "Tattoo pricing depends on the artist, design, size, placement, and session time. 🎨 Check the artist's profile for their rate, then message them with your design idea for a more specific discussion."
+        if any(x in t for x in ["thank", "thanks", "salamat"]):
+            return f"You're very welcome, {name}! 😊 I'm right here if you need anything else with TINTA."
+        if any(x in t for x in ["good night", "goodnight"]):
+            return "Good night! 🌙 Take care, and I'll be here whenever you're ready to continue your TINTA journey."
+        if any(x in t for x in ["okay", "ok", "sige"]):
+            return "Sounds good! 👍 Whenever you're ready, tell me what you'd like to do next and I'll guide you."
+        return f"Got you, {name}. 😊 Tell me a little more about what you want to do and I'll help you with the next step. If it's about a specific booking or payment issue, I can also point you to the right TINTA person."
 
     async def send(body: ChatSendIn, user=Depends(current_user)):
         me = await identity(user)
@@ -109,7 +154,7 @@ def install(server):
             cid = f"bot:{me['id']}"
             msg = {"id": str(uuid.uuid4()), "conversation_id": cid, "sender_id": me["id"], "sender_role": me["role"], "sender_name": me["name"], "text": text, "created_at": now_iso()}
             await db.chat_messages.insert_one(msg)
-            reply = {"id": str(uuid.uuid4()), "conversation_id": cid, "sender_id": "bot", "sender_role": "bot", "sender_name": "TINTA AI", "text": bot_reply(text), "created_at": now_iso()}
+            reply = {"id": str(uuid.uuid4()), "conversation_id": cid, "sender_id": "bot", "sender_role": "bot", "sender_name": "TINTA AI", "text": await bot_reply(text, user, cid), "created_at": now_iso()}
             await db.chat_messages.insert_one(reply)
             return {"message": msg, "reply": reply}
         if body.conversation_id:
@@ -119,7 +164,8 @@ def install(server):
                 raise HTTPException(403, "Invalid conversation")
             other_id = parts[2] if parts[1] == me["id"] else parts[1]
             recipient = await db.users.find_one({"id": other_id}, {"_id": 0, "id": 1})
-            if not recipient: raise HTTPException(404, "Recipient not found")
+            if not recipient:
+                raise HTTPException(404, "Recipient not found")
         else:
             if not body.recipient_id or not body.recipient_role:
                 raise HTTPException(422, "Recipient is required")
