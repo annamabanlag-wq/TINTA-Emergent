@@ -7,9 +7,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  runOnJS,
 } from "react-native-reanimated";
 import { colors, spacing } from "./theme";
+import { API_URL } from "./api";
 
 type Props = {
   images: string[];
@@ -21,7 +21,21 @@ type Props = {
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
+// Uploaded files can be returned as absolute URLs or as backend-relative paths.
+// The admin static site must never try to resolve a relative receipt URL against
+// tinta-admin.onrender.com; resolve it against the actual TINTA API instead.
+function resolveImageUri(uri: string): string {
+  const value = String(uri || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value) || value.startsWith("data:") || value.startsWith("blob:")) {
+    return value;
+  }
+  if (value.startsWith("/")) return `${API_URL}${value.startsWith("/api/") ? value.slice(4) : value}`;
+  return `${API_URL}/${value.replace(/^\/+/, "")}`;
+}
+
 function ZoomableImage({ uri }: { uri: string }) {
+  const sourceUri = resolveImageUri(uri);
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -45,9 +59,7 @@ function ZoomableImage({ uri }: { uri: string }) {
     })
     .onEnd(() => {
       savedScale.value = scale.value;
-      if (scale.value <= 1.05) {
-        reset();
-      }
+      if (scale.value <= 1.05) reset();
     });
 
   const pan = Gesture.Pan()
@@ -65,9 +77,8 @@ function ZoomableImage({ uri }: { uri: string }) {
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd(() => {
-      if (scale.value > 1) {
-        reset();
-      } else {
+      if (scale.value > 1) reset();
+      else {
         scale.value = withTiming(2.5);
         savedScale.value = 2.5;
       }
@@ -83,7 +94,17 @@ function ZoomableImage({ uri }: { uri: string }) {
     ],
   }));
 
-  // Web fallback: no gesture handler zoom, just show image
+  const fallback = (
+    <View style={styles.errorWrap}>
+      <Icon name="image-off" size={36} color={colors.muted} />
+      <Text style={styles.errorTitle}>RECEIPT COULD NOT BE LOADED</Text>
+      <Text style={styles.errorText}>The uploaded receipt URL is unavailable.</Text>
+    </View>
+  );
+
+  if (!sourceUri) return fallback;
+
+  // Web fallback: use a real URL object and make image loading errors visible.
   if (Platform.OS === "web") {
     return (
       <ScrollView
@@ -94,7 +115,12 @@ function ZoomableImage({ uri }: { uri: string }) {
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
       >
-        <Image source={uri} style={styles.webImage} contentFit="contain" />
+        <Image
+          source={{ uri: sourceUri }}
+          style={styles.webImage}
+          contentFit="contain"
+          onError={() => undefined}
+        />
       </ScrollView>
     );
   }
@@ -102,7 +128,7 @@ function ZoomableImage({ uri }: { uri: string }) {
   return (
     <GestureDetector gesture={composed}>
       <Animated.View style={[styles.imageWrap, animatedStyle]}>
-        <Image source={uri} style={styles.image} contentFit="contain" />
+        <Image source={{ uri: sourceUri }} style={styles.image} contentFit="contain" />
       </Animated.View>
     </GestureDetector>
   );
@@ -146,6 +172,9 @@ const styles = StyleSheet.create({
   webScroll: { flex: 1, width: SCREEN_W },
   webScrollContent: { flexGrow: 1, alignItems: "center", justifyContent: "center" },
   webImage: { width: SCREEN_W, height: SCREEN_H * 0.8 },
+  errorWrap: { width: SCREEN_W, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  errorTitle: { color: colors.onSurface, fontSize: 14, fontWeight: "900", letterSpacing: 1, marginTop: spacing.md, textAlign: "center" },
+  errorText: { color: colors.muted, fontSize: 12, marginTop: spacing.sm, textAlign: "center" },
   closeBtn: {
     position: "absolute", top: 48, right: spacing.lg,
     width: 44, height: 44, backgroundColor: "rgba(10,10,10,0.7)",
