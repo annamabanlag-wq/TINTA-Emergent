@@ -30,7 +30,6 @@ def install(server):
         return True
 
     async def resolve_artist_user_id(artist):
-        """Resolve an active artist to its real user and repair legacy links."""
         candidates = [artist.get("artist_user_id"), artist.get("user_id")]
         email = str(artist.get("email") or "").strip().lower()
         if email:
@@ -45,8 +44,6 @@ def install(server):
             )
             if owner:
                 candidates.append(owner.get("id"))
-
-        # Approved applications are authoritative for artist accounts.
         artist_id = artist.get("id") or artist.get("artist_id")
         if artist_id:
             application = await db.artist_applications.find_one(
@@ -55,8 +52,6 @@ def install(server):
             )
             if application and application.get("user_id"):
                 candidates.insert(0, application["user_id"])
-
-        # A real active artist record is sufficient evidence for a legacy user link.
         for uid in candidates:
             if await is_artist_user(uid):
                 return uid
@@ -107,7 +102,10 @@ def install(server):
                 out.append({"id": a["id"], "name": a["name"], "role": "artist", "avatar": a["avatar"], "conversation_id": f"dm:{':'.join(sorted([me_id, a['artist_user_id']]))}"})
 
         if role == "artist":
-            customers = await db.users.find({"is_admin": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
+            customers = await db.users.find(
+                {"is_admin": {"$ne": True}, "$or": [{"artist_portal": {"$ne": True}}, {"role": {"$nin": ["artist", "ARTIST"]}}]},
+                {"_id": 0, "id": 1, "name": 1},
+            ).to_list(500)
             for c in customers:
                 cid = c.get("id")
                 if cid and cid != me_id:
