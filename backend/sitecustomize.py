@@ -28,6 +28,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_gcash_only(module)
             from gcash_security_patch import install as install_gcash_security
             install_gcash_security(module)
+            from artist_portal_patch import install as install_artist_portal
+            install_artist_portal(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
