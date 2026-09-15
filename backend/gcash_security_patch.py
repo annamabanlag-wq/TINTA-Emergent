@@ -10,8 +10,25 @@ payments so they cannot be confused with a real GCash transfer.
 """
 
 from fastapi import HTTPException
+import hashlib
 import os
 import uuid
+from urllib.parse import urlparse, unquote
+
+
+def _internal_upload_path(url: str) -> str | None:
+    """Return the storage path for a TINTA /api/files URL, otherwise None."""
+    try:
+        parsed = urlparse(url)
+        marker = "/api/files/"
+        if marker not in parsed.path:
+            return None
+        path = unquote(parsed.path.split(marker, 1)[1]).lstrip("/")
+        if not path or ".." in path:
+            return None
+        return path
+    except Exception:
+        return None
 
 
 def install(server_module):
@@ -21,8 +38,22 @@ def install(server_module):
     compute_split = server_module.compute_split
     current_user = server_module.current_user
     require_admin = server_module.require_admin
+    get_object = server_module.get_object
     DEPOSIT_AMOUNT_MAJOR = server_module.DEPOSIT_AMOUNT_MAJOR
     test_payment_mode = os.getenv("TEST_PAYMENT_MODE", "false").strip().lower() == "true"
+
+    async def receipt_hash(receipt_url: str | None) -> str | None:
+        """Hash an uploaded TINTA receipt so the exact same image cannot be reused."""
+        path = _internal_upload_path(receipt_url or "")
+        if not path:
+            return None
+        try:
+            data, _ = await __import__("starlette").concurrency.run_in_threadpool(get_object, path)
+            return hashlib.sha256(data).hexdigest()
+        except Exception:
+            # Do not make an otherwise valid payment fail solely because an old/external
+            # receipt cannot be downloaded. The URL and upload ownership checks still apply.
+            return None
 
     async def secure_submit(body, user=__import__("fastapi").Depends(current_user)):
         reference = (body.reference_number or "").strip()
@@ -64,6 +95,58 @@ def install(server_module):
         if receipt_url and len(receipt_url) > 2000:
             raise HTTPException(422, "Receipt URL is too long")
 
+        # A receipt uploaded through TINTA belongs to the submitting user. This prevents
+        # one customer from attaching another customer's protected receipt URL.
+        receipt_path = _internal_upload_path(receipt_url or "")
+        if receipt_path:
+            upload_meta = await db.uploads.find_one(
+                {"path": receipt_path}, {"_id": 0, "owner_id": 1, "content_type": 1}
+            )
+            if not upload_meta or upload_meta.get("owner_id") != user["id"]:
+                raise HTTPException(403, "Receipt upload does not belong to this account")
+            if not (upload_meta.get("content_type") or "").startswith("image/"):
+                raise HTTPException(422, "GCash receipt must be an image")
+
+        # Exact-image duplicate protection. This catches the common failure where a user
+        # selects an old receipt again but enters a brand-new GCash reference.
+        current_hash = await receipt_hash(receipt_url)
+        if current_hash:
+            hash_duplicate = await db.bookings.find_one(
+                {
+                    "gcash_receipt_hash": current_hash,
+                    "id": {"$ne": booking["id"]},
+                    "gcash_review_status": {"$in": ["pending", "approved"]},
+                },
+                {"_id": 0, "id": 1},
+            )
+            if hash_duplicate:
+                raise HTTPException(409, "This GCash receipt image has already been submitted")
+
+            # Backward-compatible check for receipts saved before hashes were introduced.
+            # It hashes existing internal receipt files lazily, so the fix also catches old
+            # receipts already stored in TINTA rather than only receipts uploaded after deploy.
+            old_receipts = await db.bookings.find(
+                {
+                    "gcash_receipt_url": {"$type": "string"},
+                    "id": {"$ne": booking["id"]},
+                    "gcash_review_status": {"$in": ["pending", "approved"]},
+                },
+                {"_id": 0, "id": 1, "gcash_receipt_url": 1, "gcash_receipt_hash": 1},
+            ).sort("created_at", -1).to_list(200)
+            for old in old_receipts:
+                if old.get("gcash_receipt_hash") == current_hash:
+                    raise HTTPException(409, "This GCash receipt image has already been submitted")
+                if old.get("gcash_receipt_hash"):
+                    continue
+                old_hash = await receipt_hash(old.get("gcash_receipt_url"))
+                if old_hash and old_hash == current_hash:
+                    raise HTTPException(409, "This GCash receipt image has already been submitted")
+                if old_hash:
+                    await db.bookings.update_one(
+                        {"id": old["id"], "gcash_receipt_hash": {"$exists": False}},
+                        {"$set": {"gcash_receipt_hash": old_hash}},
+                    )
+
         result = await db.bookings.update_one(
             {
                 "id": booking["id"],
@@ -75,6 +158,7 @@ def install(server_module):
                 "payment_method": "gcash",
                 "gcash_reference_number": reference,
                 "gcash_receipt_url": receipt_url,
+                "gcash_receipt_hash": current_hash,
                 "gcash_review_status": "pending",
                 "gcash_submitted_at": now_iso(),
                 "gcash_admin_note": "TEST PAYMENT — NO REAL GCASH TRANSFER" if is_test_payment else None,
