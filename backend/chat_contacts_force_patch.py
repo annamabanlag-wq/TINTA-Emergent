@@ -103,7 +103,11 @@ def install(server):
 
         if role == "artist":
             customers = await db.users.find(
-                {"is_admin": {"$ne": True}, "$or": [{"artist_portal": {"$ne": True}}, {"role": {"$nin": ["artist", "ARTIST"]}}]},
+                {
+                    "is_admin": {"$ne": True},
+                    "artist_portal": {"$ne": True},
+                    "role": {"$nin": ["artist", "ARTIST"]},
+                },
                 {"_id": 0, "id": 1, "name": 1},
             ).to_list(500)
             for c in customers:
