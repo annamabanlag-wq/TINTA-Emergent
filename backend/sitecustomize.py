@@ -32,10 +32,10 @@ class _ServerLoader(importlib.abc.Loader):
             install_artist_portal(module)
             from chat_patch import install as install_chat
             install_chat(module)
-            # Must run after chat_patch because it replaces the contacts route
-            # with the hardened legacy-artist user-id recovery logic.
             from chat_contacts_patch import install as install_chat_contacts
             install_chat_contacts(module)
+            from artist_chat_repair import install as install_artist_chat_repair
+            install_artist_chat_repair(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
