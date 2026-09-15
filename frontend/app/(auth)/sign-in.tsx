@@ -7,10 +7,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSession } from "../../src/session";
 import { colors, spacing, IMAGES } from "../../src/theme";
 
+function isArtistHost() {
+  if (typeof window !== "undefined") {
+    return window.location.hostname.toLowerCase().includes("tinta-artist");
+  }
+  return false;
+}
+
 export default function SignIn() {
   const router = useRouter();
   const params = useLocalSearchParams<{ next?: string }>();
-  const isArtist = params.next === "artist";
+  const isArtist = params.next === "artist" || isArtistHost();
   const isAdmin = params.next === "admin";
   const insets = useSafeAreaInsets();
   const { signIn } = useSession();
