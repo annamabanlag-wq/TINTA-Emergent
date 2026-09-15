@@ -3,9 +3,14 @@
 The launch payment method is manual GCash: customers submit proof and an admin
 approves/rejects it. This patch replaces the existing route handlers at startup
 so the security rules are enforced server-side without changing the UI.
+
+A temporary server-side TEST_PAYMENT_MODE may be enabled for development. Test
+payments must use a TEST-GCASH- reference and are explicitly marked as test
+payments so they cannot be confused with a real GCash transfer.
 """
 
 from fastapi import HTTPException
+import os
 import uuid
 
 
@@ -17,11 +22,14 @@ def install(server_module):
     current_user = server_module.current_user
     require_admin = server_module.require_admin
     DEPOSIT_AMOUNT_MAJOR = server_module.DEPOSIT_AMOUNT_MAJOR
+    test_payment_mode = os.getenv("TEST_PAYMENT_MODE", "false").strip().lower() == "true"
 
     async def secure_submit(body, user=__import__("fastapi").Depends(current_user)):
         reference = (body.reference_number or "").strip()
         if len(reference) < 3:
             raise HTTPException(422, "GCash reference number is required")
+
+        is_test_payment = test_payment_mode and reference.upper().startswith("TEST-GCASH-")
 
         booking = await db.bookings.find_one(
             {"id": body.booking_id, "user_id": user["id"]}, {"_id": 0}
@@ -33,8 +41,6 @@ def install(server_module):
         if booking.get("gcash_review_status") == "pending":
             raise HTTPException(409, "GCash payment is already pending verification")
 
-        # A GCash reference must not be reused for another booking. This blocks
-        # accidental duplicate submissions and a common proof-reuse attack.
         duplicate = await db.bookings.find_one(
             {
                 "gcash_reference_number": reference,
@@ -51,13 +57,13 @@ def install(server_module):
             total = DEPOSIT_AMOUNT_MAJOR
 
         receipt_url = (body.receipt_url or "").strip() or None
+        if is_test_payment and not receipt_url:
+            receipt_url = "https://placehold.co/600x800/png?text=TINTA+TEST+GCASH"
         if receipt_url and not (receipt_url.startswith("https://") or receipt_url.startswith("http://")):
             raise HTTPException(422, "Invalid receipt URL")
         if receipt_url and len(receipt_url) > 2000:
             raise HTTPException(422, "Receipt URL is too long")
 
-        # Re-check the booking in the update filter so two concurrent requests
-        # cannot both move the same booking into a pending payment state.
         result = await db.bookings.update_one(
             {
                 "id": booking["id"],
@@ -71,9 +77,10 @@ def install(server_module):
                 "gcash_receipt_url": receipt_url,
                 "gcash_review_status": "pending",
                 "gcash_submitted_at": now_iso(),
-                "gcash_admin_note": None,
+                "gcash_admin_note": "TEST PAYMENT — NO REAL GCASH TRANSFER" if is_test_payment else None,
                 "amount_submitted": total,
                 "payment_status": "unpaid",
+                "is_test_payment": is_test_payment,
             }},
         )
         if result.modified_count != 1:
@@ -84,7 +91,8 @@ def install(server_module):
             "status": "pending_verification",
             "booking_id": booking["id"],
             "amount": total,
-            "message": "GCash payment submitted for verification",
+            "test_payment": is_test_payment,
+            "message": "TEST GCash payment submitted for verification" if is_test_payment else "GCash payment submitted for verification",
         }
 
     async def secure_review(booking_id: str, body, _=__import__("fastapi").Depends(require_admin)):
@@ -94,8 +102,6 @@ def install(server_module):
         if booking.get("payment_method") != "gcash":
             raise HTTPException(400, "This booking is not a GCash payment")
 
-        # Reviews are only valid while the proof is pending. This prevents an
-        # already-rejected proof from being approved by a stale/double request.
         if booking.get("gcash_review_status") != "pending":
             if booking.get("payment_status") == "paid" and booking.get("gcash_review_status") == "approved":
                 return {"reviewed": True, "approved": True, "booking_id": booking_id, "message": "Payment is already approved"}
@@ -119,8 +125,6 @@ def install(server_module):
                 raise HTTPException(409, "Payment review was already completed")
             return {"reviewed": True, "approved": False, "booking_id": booking_id, "message": "GCash payment rejected"}
 
-        # Never trust an amount from the client or from the payment proof.
-        # Recompute the payable total from the original booking fields.
         total = int(booking.get("deposit", 0)) + int(booking.get("service_fee", 0))
         if total <= 0:
             total = DEPOSIT_AMOUNT_MAJOR
@@ -151,8 +155,6 @@ def install(server_module):
         if result.modified_count != 1:
             raise HTTPException(409, "Payment review was already completed")
 
-        # One ledger row per booking; repeated approval cannot create another
-        # commission or artist-earnings record.
         await db.earnings_ledger.update_one(
             {"booking_id": booking_id},
             {"$setOnInsert": {
@@ -167,6 +169,7 @@ def install(server_module):
                 "artist_net": split["artist_net"],
                 "payment_intent_id": payment_id,
                 "status": "pending_payout",
+                "is_test_payment": bool(booking.get("is_test_payment")),
                 "created_at": reviewed_at,
             }},
             upsert=True,
@@ -179,10 +182,10 @@ def install(server_module):
             "amount": total,
             "commission": split["commission"],
             "artist_net": split["artist_net"],
-            "message": "GCash payment approved",
+            "test_payment": bool(booking.get("is_test_payment")),
+            "message": "TEST GCash payment approved" if booking.get("is_test_payment") else "GCash payment approved",
         }
 
-    # Replace the FastAPI route endpoint and dependency callable in-place.
     replacements = {
         "/api/payments/gcash/submit": secure_submit,
         "/api/admin/gcash-payments/{booking_id}/review": secure_review,
