@@ -151,6 +151,14 @@ export default function BookScreen() {
         }),
       }, token);
 
+      // Clear payment/upload state immediately after the submission succeeds.
+      // This prevents the previous receipt and reference from appearing on a new booking form.
+      setGcashReference("");
+      setGcashReceiptUrl("");
+      setGcashReceiptUri(null);
+      setGcashReceiptFile(null);
+      setRefUri(null);
+      setRefFile(null);
       setPaid(false);
       setDone(true);
       Alert.alert("GCash Payment Submitted", "Your payment is now pending verification. We will confirm it after the admin reviews your GCash payment.");
@@ -243,7 +251,7 @@ export default function BookScreen() {
         </>}
       </ScrollView>
 
-      <View style={[styles.stickyBar, { paddingBottom: insets.bottom + spacing.md }]}>
+      <View style={[styles.stickyBar, { paddingBottom: insets.bottom + spacing.md }]}> 
         {step < 3 ? <Pressable testID="book-next-button" onPress={() => setStep((step + 1) as 2 | 3)} disabled={step === 1 ? !canStep1 : !canStep2} style={[styles.bookBtn, (step === 1 ? !canStep1 : !canStep2) && { opacity: 0.5 }]}><Text style={styles.bookText}>CONTINUE</Text><Icon name="arrow-right" size={20} color={colors.onBrand} /></Pressable> : <Pressable testID="book-confirm-button" onPress={createBookingAndPay} disabled={busy} style={[styles.bookBtn, busy && { opacity: 0.5 }]}><Text style={styles.bookText}>{busy ? (uploading ? "UPLOADING..." : "SUBMITTING...") : `SUBMIT GCash ${fmtPHP(DEPOSIT)}`}</Text><Icon name="lock" size={18} color={colors.onBrand} /></Pressable>}
       </View>
     </KeyboardAvoidingView>
