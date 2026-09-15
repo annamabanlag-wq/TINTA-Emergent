@@ -34,16 +34,27 @@ def install(server):
                     continue
                 out.append({"id": a["id"], "name": a.get("name") or "Artist", "role": "artist", "avatar": a.get("avatar") or "", "conversation_id": f"dm:{':'.join(sorted([me_id, uid]))}"})
 
-        if role == "artist" and me_artist:
-            customer_ids = await db.bookings.distinct("user_id", {"artist_id": me_artist["id"]})
-            customers = await db.users.find({"id": {"$in": customer_ids}, "is_admin": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
+        if role == "artist":
+            # Artists are allowed to message customers. Show real customer accounts
+            # directly instead of requiring a booking to exist first. This makes the
+            # Messages feature usable for inquiries before a booking is created.
+            customers = await db.users.find(
+                {"is_admin": {"$ne": True}},
+                {"_id": 0, "id": 1, "name": 1},
+            ).to_list(500)
             for c in customers:
-                out.append({"id": c["id"], "name": c.get("name") or "Customer", "role": "customer", "avatar": "", "conversation_id": f"dm:{':'.join(sorted([me_id, c['id']]))}"})
+                cid = c.get("id")
+                if not cid or cid == me_id:
+                    continue
+                out.append({"id": cid, "name": c.get("name") or "Customer", "role": "customer", "avatar": "", "conversation_id": f"dm:{':'.join(sorted([me_id, cid]))}"})
 
         if role == "admin":
             customers = await db.users.find({"is_admin": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
             for c in customers:
-                out.append({"id": c["id"], "name": c.get("name") or "Customer", "role": "customer", "avatar": "", "conversation_id": f"dm:{':'.join(sorted([me_id, c['id']]))}"})
+                cid = c.get("id")
+                if not cid or cid == me_id:
+                    continue
+                out.append({"id": cid, "name": c.get("name") or "Customer", "role": "customer", "avatar": "", "conversation_id": f"dm:{':'.join(sorted([me_id, cid]))}"})
 
         deduped = []
         seen = set()
@@ -51,7 +62,7 @@ def install(server):
             if item["conversation_id"] not in seen:
                 seen.add(item["conversation_id"])
                 deduped.append(item)
-        print(f"TINTA FORCE CONTACTS: role={role} total={len(deduped)} artists={[x['name'] for x in deduped if x.get('role') == 'artist']}")
+        print(f"TINTA FORCE CONTACTS: role={role} total={len(deduped)} artists={[x['name'] for x in deduped if x.get('role') == 'artist']} customers={[x['name'] for x in deduped if x.get('role') == 'customer']}")
         return deduped
 
     app.routes[:] = [r for r in app.routes if not (getattr(r, "path", None) == "/api/chat/contacts" and "GET" in getattr(r, "methods", set()))]
