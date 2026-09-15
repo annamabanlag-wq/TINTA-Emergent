@@ -3,8 +3,6 @@ import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { api, AuthOut, User } from "./api";
 
-// Version the auth key so a deployment that changed JWT signing/config cannot keep
-// replaying an old token. Users get a clean session and a fresh token after deploy.
 const KEY = "inked_token_v2";
 const LEGACY_KEY = "inked_token";
 
@@ -16,19 +14,14 @@ async function readToken(): Promise<string | null> {
       if (current) return current;
       window.localStorage.removeItem(LEGACY_KEY);
       return null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
-
   try {
     const current = await SecureStore.getItemAsync(KEY);
     if (current) return current;
     await SecureStore.deleteItemAsync(LEGACY_KEY);
     return null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function writeToken(v: string | null) {
@@ -38,8 +31,7 @@ async function writeToken(v: string | null) {
     window.localStorage.removeItem(LEGACY_KEY);
     return;
   }
-  if (v) await SecureStore.setItemAsync(KEY, v);
-  else await SecureStore.deleteItemAsync(KEY);
+  if (v) await SecureStore.setItemAsync(KEY, v); else await SecureStore.deleteItemAsync(KEY);
   await SecureStore.deleteItemAsync(LEGACY_KEY);
 }
 
@@ -48,7 +40,7 @@ type Ctx = {
   token: string | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  signUp: (email: string, password: string, name: string, role?: "customer" | "artist") => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -67,17 +59,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-
-    // Any protected API call that receives 401 invalidates this session once,
-    // so the app cannot keep retrying a JWT the backend has rejected.
-    const onAuthExpired = () => {
-      void clearSession();
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("tinta:auth-expired", onAuthExpired);
-    }
-
+    const onAuthExpired = () => { void clearSession(); };
+    if (typeof window !== "undefined") window.addEventListener("tinta:auth-expired", onAuthExpired);
     (async () => {
       const t = await readToken();
       if (!active) return;
@@ -85,51 +68,35 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         try {
           const me = await api<User>("/auth/me", {}, t);
           if (!active) return;
-          setUser(me);
-          setToken(t);
-        } catch {
-          await clearSession();
-        }
+          setUser(me); setToken(t);
+        } catch { await clearSession(); }
       }
       if (active) setLoading(false);
     })();
-
     return () => {
       active = false;
-      if (typeof window !== "undefined") {
-        window.removeEventListener("tinta:auth-expired", onAuthExpired);
-      }
+      if (typeof window !== "undefined") window.removeEventListener("tinta:auth-expired", onAuthExpired);
     };
   }, [clearSession]);
 
-  const doAuth = useCallback(async (path: string, body: any) => {
+  const doAuth = useCallback(async (path: string, body: any, persist = true) => {
     const r = await api<AuthOut>(path, { method: "POST", body: JSON.stringify(body) });
-    // Registration intentionally returns an empty token until mailbox verification.
-    if (!r.access_token) {
-      await clearSession();
-      return;
-    }
-
-    // Validate the newly issued JWT against the same backend before persisting it.
-    // This catches signing/configuration mismatches immediately instead of creating
-    // a session that fails with 401 on the next protected request.
+    if (!r.access_token) { await clearSession(); return; }
     const me = await api<User>("/auth/me", {}, r.access_token);
-    await writeToken(r.access_token);
-    setToken(r.access_token);
-    setUser(me);
+    if (persist) {
+      await writeToken(r.access_token);
+      setToken(r.access_token);
+      setUser(me);
+    } else {
+      await clearSession();
+    }
   }, [clearSession]);
 
   const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
-  const signUp = useCallback((email: string, password: string, name: string) => doAuth("/auth/register", { email, password, name }), [doAuth]);
-  const signOut = useCallback(async () => {
-    await clearSession();
-  }, [clearSession]);
+  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") => doAuth("/auth/register", { email, password, name }, role !== "artist"), [doAuth]);
+  const signOut = useCallback(async () => { await clearSession(); }, [clearSession]);
 
-  return (
-    <SessionContext.Provider value={{ user, token, loading, signIn, signUp, signOut }}>
-      {children}
-    </SessionContext.Provider>
-  );
+  return <SessionContext.Provider value={{ user, token, loading, signIn, signUp, signOut }}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {
