@@ -77,13 +77,19 @@ def install(server):
         existing_artist = await db.artists.find_one({"artist_user_id": application["user_id"]}, {"_id": 0})
         if existing_artist:
             artist_id = existing_artist["id"]
+            artist["id"] = artist_id
             await db.artists.update_one({"id": artist_id}, {"$set": artist})
         else:
             await db.artists.insert_one(artist)
+
+        # Approved artists must also be marked as artist accounts.
+        await db.users.update_one(
+            {"id": application["user_id"], "is_admin": {"$ne": True}},
+            {"$set": {"artist_portal": True, "role": "artist"}},
+        )
         await db.artist_applications.update_one({"id": application_id}, {"$set": {"status": "approved", "artist_id": artist_id, "admin_note": body.admin_note, "reviewed_at": now_iso()}})
         return {"reviewed": True, "approved": True, "application_id": application_id, "artist_id": artist_id}
 
-    # Add directly to app because api_router was already included by server.py.
     app.add_api_route("/api/artist-applications", apply, methods=["POST"])
     app.add_api_route("/api/artist-applications/me", my_application, methods=["GET"])
     app.add_api_route("/api/admin/artist-applications", admin_list, methods=["GET"])
