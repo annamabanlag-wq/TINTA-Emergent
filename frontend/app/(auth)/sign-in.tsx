@@ -32,7 +32,7 @@ export default function SignIn() {
     try {
       await signIn(email.trim(), password);
       if (isAdmin) router.replace("/admin/payments");
-      else router.replace(isArtist ? "/artist/portal" : "/(tabs)");
+      else router.replace(isArtist ? "/artist/apply" : "/(tabs)");
     } catch (e: any) {
       setErr(e?.message ?? "Sign in failed");
     } finally {

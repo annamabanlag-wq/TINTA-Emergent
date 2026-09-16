@@ -11,10 +11,7 @@ async function readToken(): Promise<string | null> {
   if (Platform.OS === "web") {
     try {
       if (typeof window === "undefined") return null;
-      // Web auth is intentionally tab/browser-session scoped. Unlike localStorage,
-      // sessionStorage is cleared when the tab/window is closed.
       const current = window.sessionStorage.getItem(KEY);
-      // Remove any old persistent token left by older TINTA builds.
       window.localStorage.removeItem(KEY);
       window.localStorage.removeItem(LEGACY_KEY);
       return current;
@@ -32,7 +29,6 @@ async function writeToken(v: string | null) {
   if (Platform.OS === "web") {
     if (typeof window === "undefined") return;
     if (v) window.sessionStorage.setItem(KEY, v); else window.sessionStorage.removeItem(KEY);
-    // Ensure no previous persistent web session survives this login/logout.
     window.localStorage.removeItem(KEY);
     window.localStorage.removeItem(LEGACY_KEY);
     return;
@@ -53,9 +49,7 @@ type Ctx = {
 const SessionContext = createContext<Ctx | null>(null);
 
 function isArtistHost() {
-  if (typeof window !== "undefined") {
-    return window.location.hostname.toLowerCase().includes("tinta-artist");
-  }
+  if (typeof window !== "undefined") return window.location.hostname.toLowerCase().includes("tinta-artist");
   return false;
 }
 
@@ -93,12 +87,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         try {
           const me = await api<User>("/auth/me", {}, t);
           if (!active) return;
-          if (isArtistHost() && !isArtistUser(me)) {
-            await clearSession();
-          } else {
-            tokenRef.current = t;
-            setUser(me); setToken(t);
-          }
+          if (isArtistHost() && !isArtistUser(me)) await clearSession();
+          else { tokenRef.current = t; setUser(me); setToken(t); }
         } catch { await clearSession(); }
       }
       if (active) setLoading(false);
@@ -109,8 +99,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [clearSession]);
 
-  // Web-only idle logout. The backend also enforces the 30-minute idle timeout,
-  // so this client timer is only the user-friendly immediate UI side of it.
   useEffect(() => {
     if (Platform.OS !== "web" || typeof window === "undefined" || !token) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -143,13 +131,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       tokenRef.current = r.access_token;
       setToken(r.access_token);
       setUser(me);
-    } else {
-      await clearSession();
-    }
+    } else await clearSession();
   }, [clearSession]);
 
   const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
-  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") => doAuth("/auth/register", { email, password, name }, role !== "artist"), [doAuth]);
+  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") => doAuth("/auth/register", { email, password, name, role }, role !== "artist"), [doAuth]);
   const signOut = useCallback(async () => {
     const t = tokenRef.current;
     await revokeServerSession(t);
