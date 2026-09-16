@@ -50,6 +50,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_test_accounts(module)
             from auth_session_patch import install as install_auth_session
             install_auth_session(module)
+            from auth_session_bridge import install as install_auth_session_bridge
+            install_auth_session_bridge(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
