@@ -48,6 +48,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_booking_guard(module)
             from test_accounts_patch import install as install_test_accounts
             install_test_accounts(module)
+            from auth_session_patch import install as install_auth_session
+            install_auth_session(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
