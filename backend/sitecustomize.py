@@ -52,6 +52,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_auth_session(module)
             from auth_session_bridge import install as install_auth_session_bridge
             install_auth_session_bridge(module)
+            from artist_registration_role_patch import install as install_artist_registration_role
+            install_artist_registration_role(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
