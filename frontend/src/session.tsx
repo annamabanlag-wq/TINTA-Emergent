@@ -86,7 +86,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (t) {
         try {
           const me = await api<User>("/auth/me", {}, t);
-          if (!active) return;
           if (isArtistHost() && !isArtistUser(me)) await clearSession();
           else { tokenRef.current = t; setUser(me); setToken(t); }
         } catch { await clearSession(); }
@@ -135,9 +134,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [clearSession]);
 
   const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
-  // Artist signup is admin-verified instead of mailbox-verified while the
-  // zero-budget launch has no verified outbound email domain.
-  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") => doAuth("/auth/register", { email, password, name, role }, role === "artist" ? true : false), [doAuth]);
+  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") =>
+    doAuth("/auth/register", { email, password, name, role }, false), [doAuth]);
   const signOut = useCallback(async () => {
     const t = tokenRef.current;
     await revokeServerSession(t);
