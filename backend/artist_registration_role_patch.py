@@ -70,8 +70,26 @@ def install(module):
             # Create an independent server session exactly like normal login.
             from auth_session_patch import _new_session
             _sid, token = await _new_session(module, uid)
-            public = module.PublicUser(id=uid, email=email, name=body.name.strip(), is_admin=False)
-            return module.AuthOut(access_token=token, user=public)
+
+            # Do not return the legacy PublicUser model here: it intentionally
+            # contains no role fields, so FastAPI would strip the artist flags
+            # and the Artist portal would misclassify a brand-new artist as a
+            # customer. Keep the existing AuthOut shape and add the identity
+            # flags required by the Artist portal.
+            return {
+                "access_token": token,
+                "token_type": "bearer",
+                "user": {
+                    "id": uid,
+                    "email": email,
+                    "name": body.name.strip(),
+                    "is_admin": False,
+                    "role": "artist",
+                    "artist_portal": True,
+                    "artist_identity_verified": False,
+                    "email_verified": False,
+                },
+            }
 
         artist_aware_register._tinta_artist_registration_role = True
         route.endpoint = artist_aware_register
@@ -79,5 +97,10 @@ def install(module):
         # APIRoute caches the ASGI handler during initialization. Rebuild it
         # after replacing the endpoint so the live Render process executes the
         # artist-aware handler rather than the older email-verification wrapper.
+        # Disable the legacy AuthOut response model because it strips the
+        # artist-specific identity fields from the registration response.
+        route.response_model = None
+        route.response_field = None
+        route.secure_cloned_response_field = None
         route.app = request_response(route.get_route_handler())
         return
