@@ -9,7 +9,7 @@ Customer registration keeps the existing real email-verification flow.
 """
 
 from fastapi import Request
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, request_response
 from fastapi.dependencies.utils import get_dependant
 import uuid
 
@@ -76,4 +76,8 @@ def install(module):
         artist_aware_register._tinta_artist_registration_role = True
         route.endpoint = artist_aware_register
         route.dependant = get_dependant(path=route.path_format, call=artist_aware_register)
+        # APIRoute caches the ASGI handler during initialization. Rebuild it
+        # after replacing the endpoint so the live Render process executes the
+        # artist-aware handler rather than the older email-verification wrapper.
+        route.app = request_response(route.get_route_handler())
         return
