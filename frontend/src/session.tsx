@@ -1,43 +1,50 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { api, AuthOut, User } from "./api";
 
-const KEY = "inked_token_v2";
-const LEGACY_KEY = "inked_token";
+const TOKEN_KEY = "inked_token_v2";
 const WEB_IDLE_MS = 30 * 60 * 1000;
 
-async function readToken(): Promise<string | null> {
+async function readToken() {
   if (Platform.OS === "web") {
-    try {
-      if (typeof window === "undefined") return null;
-      const current = window.sessionStorage.getItem(KEY);
-      window.localStorage.removeItem(KEY);
-      window.localStorage.removeItem(LEGACY_KEY);
-      return current;
-    } catch { return null; }
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage.getItem(TOKEN_KEY);
   }
-  try {
-    const current = await SecureStore.getItemAsync(KEY);
-    if (current) return current;
-    await SecureStore.deleteItemAsync(LEGACY_KEY);
-    return null;
-  } catch { return null; }
+  return SecureStore.getItemAsync(TOKEN_KEY);
 }
 
-async function writeToken(v: string | null) {
+async function writeToken(token: string) {
   if (Platform.OS === "web") {
-    if (typeof window === "undefined") return;
-    if (v) window.sessionStorage.setItem(KEY, v); else window.sessionStorage.removeItem(KEY);
-    window.localStorage.removeItem(KEY);
-    window.localStorage.removeItem(LEGACY_KEY);
+    if (typeof window !== "undefined") window.sessionStorage.setItem(TOKEN_KEY, token);
     return;
   }
-  if (v) await SecureStore.setItemAsync(KEY, v); else await SecureStore.deleteItemAsync(KEY);
-  await SecureStore.deleteItemAsync(LEGACY_KEY);
+  await SecureStore.setItemAsync(TOKEN_KEY, token);
 }
 
-type Ctx = {
+async function removeToken() {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") window.sessionStorage.removeItem(TOKEN_KEY);
+    return;
+  }
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
+}
+
+function isArtistHost() {
+  if (Platform.OS !== "web" || typeof window === "undefined") return false;
+  return window.location.hostname === "tinta-artist.onrender.com";
+}
+
+function isArtistUser(user: any) {
+  return user?.artist_portal === true || user?.role === "artist";
+}
+
+async function revokeServerSession(token: string | null) {
+  if (!token) return;
+  try { await api("/auth/logout", { method: "POST" }, token); } catch {}
+}
+
+type SessionContextType = {
   user: User | null;
   token: string | null;
   loading: boolean;
@@ -46,17 +53,7 @@ type Ctx = {
   signOut: () => Promise<void>;
 };
 
-const SessionContext = createContext<Ctx | null>(null);
-
-function isArtistHost() {
-  if (typeof window !== "undefined") return window.location.hostname.toLowerCase().includes("tinta-artist");
-  return false;
-}
-
-function isArtistUser(user: User | null) {
-  const account = user as (User & { artist_portal?: boolean; role?: string }) | null;
-  return !!account && (account.artist_portal === true || account.role === "artist");
-}
+const SessionContext = createContext<SessionContextType | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -65,38 +62,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef<string | null>(null);
 
   const clearSession = useCallback(async () => {
-    await writeToken(null);
+    await removeToken();
     tokenRef.current = null;
     setToken(null);
     setUser(null);
   }, []);
 
-  const revokeServerSession = useCallback(async (t: string | null) => {
-    if (!t) return;
-    try { await api("/auth/logout", { method: "POST" }, t); } catch { /* already expired/revoked */ }
-  }, []);
-
   useEffect(() => {
-    let active = true;
-    const onAuthExpired = () => { void clearSession(); };
-    if (typeof window !== "undefined") window.addEventListener("tinta:auth-expired", onAuthExpired);
+    let alive = true;
     (async () => {
       const t = await readToken();
-      if (!active) return;
-      if (t) {
-        try {
-          const me = await api<User>("/auth/me", {}, t);
-          if (!active) return;
-          if (isArtistHost() && !isArtistUser(me)) await clearSession();
-          else { tokenRef.current = t; setUser(me); setToken(t); }
-        } catch { await clearSession(); }
-      }
-      if (active) setLoading(false);
+      if (!t) { if (alive) setLoading(false); return; }
+      try {
+        const me = await api<User>("/auth/me", {}, t);
+        if (isArtistHost() && !isArtistUser(me)) throw new Error("wrong portal");
+        if (alive) { tokenRef.current = t; setToken(t); setUser(me); }
+      } catch { if (alive) await clearSession(); }
+      if (alive) setLoading(false);
     })();
-    return () => {
-      active = false;
-      if (typeof window !== "undefined") window.removeEventListener("tinta:auth-expired", onAuthExpired);
-    };
+    return () => { alive = false; };
   }, [clearSession]);
 
   useEffect(() => {
@@ -116,11 +100,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (timer) clearTimeout(timer);
       events.forEach((name) => window.removeEventListener(name, resetIdle));
     };
-  }, [token, clearSession, revokeServerSession]);
+  }, [token, clearSession]);
 
   const doAuth = useCallback(async (path: string, body: any, persist = true) => {
     const r = await api<AuthOut>(path, { method: "POST", body: JSON.stringify(body) });
-    if (!r.access_token) { await clearSession(); return; }
+    if (!r.access_token) { await clearSession(); throw new Error("Authentication failed"); }
     const me = await api<User>("/auth/me", {}, r.access_token);
     if (isArtistHost() && !isArtistUser(me)) {
       await clearSession();
@@ -135,12 +119,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [clearSession]);
 
   const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
-  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") => doAuth("/auth/register", { email, password, name, role }, role !== "artist"), [doAuth]);
+  // Artist accounts use admin identity/application verification instead of
+  // mailbox verification while TINTA is on the zero-budget email setup.
+  const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") => doAuth("/auth/register", { email, password, name, role }, true), [doAuth]);
   const signOut = useCallback(async () => {
     const t = tokenRef.current;
     await revokeServerSession(t);
     await clearSession();
-  }, [clearSession, revokeServerSession]);
+  }, [clearSession]);
 
   return <SessionContext.Provider value={{ user, token, loading, signIn, signUp, signOut }}>{children}</SessionContext.Provider>;
 }
