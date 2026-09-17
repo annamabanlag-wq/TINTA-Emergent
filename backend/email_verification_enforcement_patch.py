@@ -1,8 +1,8 @@
-"""Final auth hardening: newly registered TINTA accounts must verify mailbox ownership.
+"""Final mailbox-verification enforcement for all new TINTA accounts.
 
-This patch runs last in the startup chain so it wraps the final live register/login
-routes after session and artist-role patches. It shares the same Gmail SMTP sender
-used by email_verification_patch and keeps Resend as a fallback.
+This is the single active email-verification layer. It runs last in the startup
+chain after the artist-role and auth-session patches. Sending is HTTPS-first so
+it works on Render free services where direct SMTP egress may be unavailable.
 """
 
 import os
@@ -31,6 +31,10 @@ class ResendVerificationIn(BaseModel):
     email: str
 
 
+def _relay_configured() -> bool:
+    return bool(os.getenv("TINTA_EMAIL_RELAY_URL") and os.getenv("TINTA_EMAIL_RELAY_TOKEN"))
+
+
 def _gmail_configured() -> bool:
     return bool(os.getenv("GMAIL_SMTP_USER") and os.getenv("GMAIL_SMTP_APP_PASSWORD"))
 
@@ -39,12 +43,36 @@ def _resend_configured() -> bool:
     return bool(os.getenv("RESEND_API_KEY") and os.getenv("EMAIL_FROM"))
 
 
-def _smtp_configured() -> bool:
-    return _gmail_configured() or _resend_configured()
+def _email_configured() -> bool:
+    return _relay_configured() or _resend_configured() or _gmail_configured()
 
 
 def _new_code():
     return f"{secrets.randbelow(1000000):06d}", datetime.now(timezone.utc) + timedelta(minutes=CODE_TTL_MINUTES)
+
+
+def _send_code_relay(email: str, code: str) -> None:
+    response = requests.post(
+        os.environ["TINTA_EMAIL_RELAY_URL"].strip(),
+        headers={
+            "Content-Type": "application/json",
+        },
+        json={
+            "token": os.environ["TINTA_EMAIL_RELAY_TOKEN"],
+            "to": email,
+            "code": code,
+            "ttl_minutes": CODE_TTL_MINUTES,
+        },
+        timeout=20,
+    )
+    if not response.ok:
+        raise RuntimeError(f"Email relay HTTP {response.status_code}: {response.text[:300]}")
+    try:
+        payload = response.json()
+    except Exception:
+        raise RuntimeError("Email relay returned a non-JSON response")
+    if not payload.get("ok"):
+        raise RuntimeError(f"Email relay rejected message: {payload.get('error', 'unknown error')}")
 
 
 def _send_code_gmail(email: str, code: str) -> None:
@@ -94,11 +122,15 @@ def _send_code_resend(email: str, code: str) -> None:
 
 
 def _send_code(email: str, code: str) -> None:
-    if _gmail_configured():
-        _send_code_gmail(email, code)
+    # HTTPS relay first. Render free currently cannot reach Gmail SMTP directly.
+    if _relay_configured():
+        _send_code_relay(email, code)
         return
     if _resend_configured():
         _send_code_resend(email, code)
+        return
+    if _gmail_configured():
+        _send_code_gmail(email, code)
         return
     raise RuntimeError("No email sender is configured")
 
@@ -175,7 +207,7 @@ def install(module):
     if not any(getattr(r, "path", None) == "/api/auth/resend-verification" for r in app.routes):
         @app.post("/api/auth/resend-verification")
         async def resend_verification(body: ResendVerificationIn):
-            if not _smtp_configured():
+            if not _email_configured():
                 raise HTTPException(503, "Email verification is not configured yet.")
             try:
                 validated = validate_email(body.email, check_deliverability=True)
@@ -207,7 +239,7 @@ def install(module):
             break
 
         async def verified_register(request: Request):
-            if not _smtp_configured():
+            if not _email_configured():
                 raise HTTPException(503, "Email verification is not configured yet. Please try again shortly.")
             try:
                 payload = await request.json()
@@ -222,11 +254,10 @@ def install(module):
             if not uid:
                 raise HTTPException(500, "Registration created an invalid account")
 
-            # Customer registration may already have been handled by the earlier
-            # email_verification_patch. Do not issue a second code/email when its
-            # code and expiry are already present. Artist registration bypasses
-            # that earlier wrapper, so it will continue into the sender below.
-            current = await db.users.find_one({"id": uid}, {"_id": 0, "email_verification_code": 1, "email_verification_expires_at": 1, "email_verified": 1})
+            current = await db.users.find_one(
+                {"id": uid},
+                {"_id": 0, "email_verification_code": 1, "email_verification_expires_at": 1, "email_verified": 1},
+            )
             if current and current.get("email_verified") is False and current.get("email_verification_code") and current.get("email_verification_expires_at"):
                 user["email"] = email
                 user["email_verified"] = False
