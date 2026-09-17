@@ -82,10 +82,10 @@ def install(server):
         else:
             await db.artists.insert_one(artist)
 
-        # Approved artists must also be marked as artist accounts.
+        # Admin approval is the artist identity/publishing verification step.
         await db.users.update_one(
             {"id": application["user_id"], "is_admin": {"$ne": True}},
-            {"$set": {"artist_portal": True, "role": "artist"}},
+            {"$set": {"artist_portal": True, "role": "artist", "artist_identity_verified": True}},
         )
         await db.artist_applications.update_one({"id": application_id}, {"$set": {"status": "approved", "artist_id": artist_id, "admin_note": body.admin_note, "reviewed_at": now_iso()}})
         return {"reviewed": True, "approved": True, "application_id": application_id, "artist_id": artist_id}
