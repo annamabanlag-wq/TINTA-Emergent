@@ -1,0 +1,1 @@
+Build workflow is triggered by changes under android/ or the workflow file.
