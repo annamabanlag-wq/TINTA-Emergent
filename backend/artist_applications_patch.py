@@ -35,6 +35,35 @@ def install(server):
         approved: bool
         admin_note: Optional[str] = Field(default=None, max_length=500)
 
+    async def _validate_evidence(application: dict):
+        """Re-check evidence at review time so stale/tampered upload paths cannot be approved."""
+        user_id = application.get("user_id")
+        government_id = str(application.get("government_id_path") or "").strip()
+        completed_work = [str(p).strip() for p in (application.get("completed_work_paths") or []) if str(p).strip()]
+        if not government_id:
+            raise HTTPException(422, "Government ID is required")
+        if not completed_work:
+            raise HTTPException(422, "At least one finished tattoo work photo is required")
+
+        government_meta = await db.uploads.find_one(
+            {"path": government_id}, {"_id": 0, "owner_id": 1, "content_type": 1}
+        )
+        if not government_meta or government_meta.get("owner_id") != user_id:
+            raise HTTPException(403, "Government ID upload does not belong to the applicant")
+        if not (government_meta.get("content_type") or "").startswith("image/"):
+            raise HTTPException(422, "Government ID must be an image")
+
+        for path in completed_work:
+            meta = await db.uploads.find_one(
+                {"path": path}, {"_id": 0, "owner_id": 1, "content_type": 1}
+            )
+            if not meta or meta.get("owner_id") != user_id:
+                raise HTTPException(403, "Finished tattoo work upload does not belong to the applicant")
+            if not (meta.get("content_type") or "").startswith("image/"):
+                raise HTTPException(422, "Finished tattoo work must be an image")
+
+        return government_id, completed_work
+
     async def apply(body: ArtistApplicationIn, user=__import__('fastapi').Depends(current_user)):
         existing = await db.artist_applications.find_one({"user_id": user["id"], "status": "pending"}, {"_id": 0})
         if existing:
@@ -46,29 +75,11 @@ def install(server):
         # These are identity-verification documents, so only TINTA's own
         # authenticated upload paths are accepted. The upload endpoint records
         # the owner and content type; we verify both before saving the application.
-        government_id = body.government_id_path.strip()
-        completed_work = [p.strip() for p in body.completed_work_paths if p.strip()]
-        if not government_id:
-            raise HTTPException(422, "Government ID is required")
-        if not completed_work:
-            raise HTTPException(422, "At least one finished tattoo work photo is required")
-
-        government_meta = await db.uploads.find_one(
-            {"path": government_id}, {"_id": 0, "owner_id": 1, "content_type": 1}
-        )
-        if not government_meta or government_meta.get("owner_id") != user["id"]:
-            raise HTTPException(403, "Government ID upload does not belong to this account")
-        if not (government_meta.get("content_type") or "").startswith("image/"):
-            raise HTTPException(422, "Government ID must be an image")
-
-        for path in completed_work:
-            meta = await db.uploads.find_one(
-                {"path": path}, {"_id": 0, "owner_id": 1, "content_type": 1}
-            )
-            if not meta or meta.get("owner_id") != user["id"]:
-                raise HTTPException(403, "Finished tattoo work upload does not belong to this account")
-            if not (meta.get("content_type") or "").startswith("image/"):
-                raise HTTPException(422, "Finished tattoo work must be an image")
+        government_id, completed_work = await _validate_evidence({
+            "user_id": user["id"],
+            "government_id_path": body.government_id_path,
+            "completed_work_paths": body.completed_work_paths,
+        })
 
         app_id = str(uuid.uuid4())
         doc = body.model_dump() if hasattr(body, "model_dump") else body.dict()
@@ -95,9 +106,9 @@ def install(server):
             await db.artist_applications.update_one({"id": application_id}, {"$set": {"status": "rejected", "admin_note": body.admin_note, "reviewed_at": now_iso()}})
             return {"reviewed": True, "approved": False, "application_id": application_id}
 
-        # Never publish an artist if the required verification evidence is missing.
-        if not application.get("government_id_path") or not application.get("completed_work_paths"):
-            raise HTTPException(422, "Government ID and finished tattoo work are required before approval")
+        # Never publish an artist if the required verification evidence is missing
+        # or no longer belongs to the applicant at review time.
+        government_id, completed_work = await _validate_evidence(application)
 
         artist_id = application.get("artist_id") or str(uuid.uuid4())
         artist = {
@@ -107,7 +118,7 @@ def install(server):
             "bio": application.get("bio", ""), "bio_tl": application.get("bio_tl", ""),
             "home_service_available": bool(application.get("home_service_available", False)), "home_service_fee": int(application.get("home_service_fee", 0)),
             "rate_per_hour": int(application.get("rate_per_hour", 0)), "avatar": application.get("avatar", ""), "hero": application.get("hero", ""),
-            "portfolio": application.get("portfolio", []) + application.get("completed_work_paths", []), "rating": 5.0, "reviews_count": 0, "active": True, "blocked_dates": [],
+            "portfolio": application.get("portfolio", []) + completed_work, "rating": 5.0, "reviews_count": 0, "active": True, "blocked_dates": [],
             "artist_user_id": application["user_id"], "phone": application.get("phone", ""), "service_area": application.get("service_area", ""),
         }
         existing_artist = await db.artists.find_one({"artist_user_id": application["user_id"]}, {"_id": 0})
