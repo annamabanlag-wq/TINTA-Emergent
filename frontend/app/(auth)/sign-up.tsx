@@ -22,7 +22,13 @@ export default function SignUp() {
     setBusy(true);
     try {
       await signUp(email.trim(), password, name.trim(), isArtist ? "artist" : "customer");
-      router.replace({ pathname: "/(auth)/verify-email", params: { email: email.trim(), role: isArtist ? "artist" : "customer" } });
+      if (isArtist) {
+        // Artists use TINTA's admin verification/application process during
+        // the zero-budget launch; no paid email domain is required.
+        router.replace("/artist/apply");
+      } else {
+        router.replace({ pathname: "/(auth)/verify-email", params: { email: email.trim(), role: "customer" } });
+      }
     } catch (e: any) {
       setErr(e?.message ?? "Sign up failed");
     } finally {
@@ -43,7 +49,7 @@ export default function SignUp() {
         <TextInput testID="signup-email-input" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@ink.com" placeholderTextColor={colors.muted} style={styles.input} />
         <Text style={styles.label}>PASSWORD (MIN 6)</Text>
         <TextInput testID="signup-password-input" value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={colors.muted} style={styles.input} />
-        <Text style={styles.hint}>{isArtist ? "Your account must be email-verified before you can submit your artist profile for admin approval." : "A verification code will be sent to your email before you can sign in."}</Text>
+        <Text style={styles.hint}>{isArtist ? "Artist accounts are verified by TINTA admin review. Complete your artist profile after signup; you will not be published until approved." : "A verification code will be sent to your email before you can sign in."}</Text>
         {!!err && <Text style={styles.err} testID="signup-error">{err.toUpperCase()}</Text>}
         <Pressable testID="signup-submit-button" onPress={submit} disabled={disabled} style={({ pressed }) => [styles.cta, disabled && styles.ctaDisabled, pressed && styles.ctaPressed]}>
           <Text style={styles.ctaText}>{busy ? "CREATING..." : isArtist ? "CREATE ARTIST ACCOUNT" : "CREATE ACCOUNT"}</Text>
