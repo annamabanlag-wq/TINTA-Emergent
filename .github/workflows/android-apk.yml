@@ -1,0 +1,104 @@
+name: TINTA Native Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'frontend/**'
+      - 'android/**'
+      - '.github/workflows/android-apk.yml'
+
+env:
+  ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Generate TINTA app icons
+        working-directory: frontend
+        run: |
+          mkdir -p assets/images
+          convert -size 1024x1024 xc:black \
+            -fill white -font DejaVu-Sans-Bold -pointsize 180 \
+            -gravity center -annotate +0+0 'TINTA' assets/images/icon.png
+          convert -size 1024x1024 xc:none \
+            -fill white -font DejaVu-Sans-Bold -pointsize 180 \
+            -gravity center -annotate +0+0 'TINTA' assets/images/adaptive-icon.png
+
+      - name: Generate native Android project
+        working-directory: frontend
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform android --clean
+
+      - name: Configure installable release signing
+        working-directory: frontend/android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle')
+          s = p.read_text()
+          marker = 'buildTypes {'
+          if marker not in s:
+              raise SystemExit('buildTypes block not found')
+          release_marker = 'release {'
+          start = s.index(marker)
+          rel = s.index(release_marker, start)
+          brace = s.index('{', rel)
+          depth = 0
+          end = None
+          for i in range(brace, len(s)):
+              if s[i] == '{': depth += 1
+              elif s[i] == '}':
+                  depth -= 1
+                  if depth == 0:
+                      end = i
+                      break
+          block = s[rel:end]
+          if 'signingConfig signingConfigs.debug' not in block:
+              s = s[:brace+1] + '\n            signingConfig signingConfigs.debug' + s[brace+1:]
+          p.write_text(s)
+          PY
+
+      - name: Build standalone TINTA APK
+        working-directory: frontend/android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Verify standalone APK exists
+        run: test -s frontend/android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload TINTA standalone APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TINTA-standalone-release-apk
+          path: frontend/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
