@@ -1,13 +1,15 @@
-"""Final auth hardening: newly registered accounts must verify mailbox ownership.
+"""Final auth hardening: newly registered TINTA accounts must verify mailbox ownership.
 
 This patch runs last in the startup chain so it wraps the final live register/login
-routes after session and artist-role patches. It keeps the existing verification
-code/resend endpoints while preventing later auth wrappers from bypassing them.
+routes after session and artist-role patches. It shares the same Gmail SMTP sender
+used by email_verification_patch and keeps Resend as a fallback.
 """
 
 import os
 import secrets
+import smtplib
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 
 import requests
 from email_validator import EmailNotValidError, validate_email
@@ -29,15 +31,46 @@ class ResendVerificationIn(BaseModel):
     email: str
 
 
-def _smtp_configured() -> bool:
+def _gmail_configured() -> bool:
+    return bool(os.getenv("GMAIL_SMTP_USER") and os.getenv("GMAIL_SMTP_APP_PASSWORD"))
+
+
+def _resend_configured() -> bool:
     return bool(os.getenv("RESEND_API_KEY") and os.getenv("EMAIL_FROM"))
+
+
+def _smtp_configured() -> bool:
+    return _gmail_configured() or _resend_configured()
 
 
 def _new_code():
     return f"{secrets.randbelow(1000000):06d}", datetime.now(timezone.utc) + timedelta(minutes=CODE_TTL_MINUTES)
 
 
-def _send_code(email: str, code: str) -> None:
+def _send_code_gmail(email: str, code: str) -> None:
+    username = os.environ["GMAIL_SMTP_USER"].strip()
+    app_password = os.environ["GMAIL_SMTP_APP_PASSWORD"].replace(" ", "").strip()
+    sender = os.getenv("EMAIL_FROM", username).strip()
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = email
+    message["Subject"] = "Verify your TINTA account"
+    message.set_content(
+        f"Your TINTA verification code is: {code}\n\n"
+        f"This code expires in {CODE_TTL_MINUTES} minutes.\n"
+        "If you did not create a TINTA account, you can ignore this email."
+    )
+
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(username, app_password)
+        smtp.send_message(message)
+
+
+def _send_code_resend(email: str, code: str) -> None:
     response = requests.post(
         RESEND_API_URL,
         headers={
@@ -58,6 +91,16 @@ def _send_code(email: str, code: str) -> None:
     )
     if not response.ok:
         raise RuntimeError(f"Resend API {response.status_code}: {response.text[:300]}")
+
+
+def _send_code(email: str, code: str) -> None:
+    if _gmail_configured():
+        _send_code_gmail(email, code)
+        return
+    if _resend_configured():
+        _send_code_resend(email, code)
+        return
+    raise RuntimeError("No email sender is configured")
 
 
 async def _revoke_created_session(module, token: str):
@@ -102,7 +145,6 @@ def install(module):
     app = module.app
     db = module.db
 
-    # Ensure the verification endpoints exist exactly once.
     if not any(getattr(r, "path", None) == "/api/auth/verify-email" for r in app.routes):
         @app.post("/api/auth/verify-email")
         async def verify_email(body: VerifyEmailIn):
@@ -157,8 +199,6 @@ def install(module):
                 raise HTTPException(503, "We could not send the verification email. Please try again.")
             return {"sent": True, "message": "A new verification code was sent."}
 
-    # Wrap the final live register route. This runs after the older wrappers
-    # and therefore cannot be bypassed by auth-session or artist-role patches.
     for route in list(app.routes):
         if not isinstance(route, APIRoute) or route.path != "/api/auth/register" or route.methods != {"POST"}:
             continue
@@ -211,7 +251,6 @@ def install(module):
         route.app = request_response(route.get_route_handler())
         break
 
-    # Wrap the final live login route so explicitly unverified accounts cannot sign in.
     for route in list(app.routes):
         if not isinstance(route, APIRoute) or route.path != "/api/auth/login" or route.methods != {"POST"}:
             continue
