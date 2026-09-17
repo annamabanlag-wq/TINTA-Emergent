@@ -221,6 +221,17 @@ def install(module):
             email = str(user.get("email") or validated.normalized).strip().lower()
             if not uid:
                 raise HTTPException(500, "Registration created an invalid account")
+
+            # Customer registration may already have been handled by the earlier
+            # email_verification_patch. Do not issue a second code/email when its
+            # code and expiry are already present. Artist registration bypasses
+            # that earlier wrapper, so it will continue into the sender below.
+            current = await db.users.find_one({"id": uid}, {"_id": 0, "email_verification_code": 1, "email_verification_expires_at": 1, "email_verified": 1})
+            if current and current.get("email_verified") is False and current.get("email_verification_code") and current.get("email_verification_expires_at"):
+                user["email"] = email
+                user["email_verified"] = False
+                return result
+
             code, expires = _new_code()
             await db.users.update_one(
                 {"id": uid},
