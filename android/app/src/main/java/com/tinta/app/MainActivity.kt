@@ -7,15 +7,17 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.browser.customtabs.CustomTabsIntent
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -28,29 +30,34 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val root = FrameLayout(this)
+        webView = WebView(this)
+        webView.setBackgroundColor(Color.WHITE)
+        root.addView(webView, FrameLayout.LayoutParams(-1, -1))
+
         loadingView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             setBackgroundColor(Color.BLACK)
         }
         loadingView.addView(TextView(this).apply {
             text = "TINTA"
             textSize = 42f
             setTextColor(Color.WHITE)
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         })
         loadingView.addView(TextView(this).apply {
             text = "Loading..."
             textSize = 16f
             setTextColor(Color.LTGRAY)
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             setPadding(0, 12, 0, 0)
         })
-        setContentView(loadingView)
+        root.addView(loadingView, FrameLayout.LayoutParams(-1, -1))
+        setContentView(root)
 
-        webView = WebView(this)
-        webView.setBackgroundColor(Color.WHITE)
+        webView.visibility = View.INVISIBLE
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
@@ -68,8 +75,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 pageFinished = true
-                loadingView.visibility = android.view.View.GONE
-                webView.visibility = android.view.View.VISIBLE
+                loadingView.visibility = View.GONE
+                webView.visibility = View.VISIBLE
                 handler.postDelayed({
                     if (!fallbackOpened && webView.contentHeight <= 0) openInBrowser()
                 }, 3500)
@@ -80,11 +87,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.visibility = android.view.View.INVISIBLE
-        setContentView(webView)
-        val tintaUrl = BuildConfig.TINTA_WEB_URL
-        webView.loadUrl(tintaUrl)
-
+        webView.loadUrl(BuildConfig.TINTA_WEB_URL)
         handler.postDelayed({
             if (!pageFinished && !fallbackOpened) openInBrowser()
         }, 8000)
@@ -94,9 +97,9 @@ class MainActivity : AppCompatActivity() {
         if (fallbackOpened) return
         fallbackOpened = true
         try {
-            CustomTabsIntent.Builder().build().launchUrl(this, Uri.parse(BuildConfig.TINTA_WEB_URL))
-        } catch (_: Exception) {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.TINTA_WEB_URL)))
+        } catch (_: Exception) {
+            loadingView.visibility = View.VISIBLE
         }
     }
 
