@@ -17,13 +17,15 @@ def install(server):
         city: str = Field(min_length=2, max_length=100)
         studio: str = Field(min_length=2, max_length=120)
         address: str = ""
-        styles: List[str] = []
+        styles: List[str] = Field(default_factory=list, max_length=20)
         bio: str = Field(min_length=10, max_length=1000)
         bio_tl: str = ""
         rate_per_hour: int = Field(ge=1, le=1000000)
         avatar: str = ""
         hero: str = ""
-        portfolio: List[str] = []
+        portfolio: List[str] = Field(default_factory=list, max_length=30)
+        government_id_path: str = Field(min_length=1, max_length=500)
+        completed_work_paths: List[str] = Field(min_length=1, max_length=12)
         home_service_available: bool = False
         home_service_fee: int = Field(default=0, ge=0, le=1000000)
         phone: str = ""
@@ -40,8 +42,38 @@ def install(server):
         approved = await db.artist_applications.find_one({"user_id": user["id"], "status": "approved"}, {"_id": 0})
         if approved:
             raise HTTPException(409, "Artist application already approved")
+
+        # These are identity-verification documents, so only TINTA's own
+        # authenticated upload paths are accepted. The upload endpoint records
+        # the owner and content type; we verify both before saving the application.
+        government_id = body.government_id_path.strip()
+        completed_work = [p.strip() for p in body.completed_work_paths if p.strip()]
+        if not government_id:
+            raise HTTPException(422, "Government ID is required")
+        if not completed_work:
+            raise HTTPException(422, "At least one finished tattoo work photo is required")
+
+        government_meta = await db.uploads.find_one(
+            {"path": government_id}, {"_id": 0, "owner_id": 1, "content_type": 1}
+        )
+        if not government_meta or government_meta.get("owner_id") != user["id"]:
+            raise HTTPException(403, "Government ID upload does not belong to this account")
+        if not (government_meta.get("content_type") or "").startswith("image/"):
+            raise HTTPException(422, "Government ID must be an image")
+
+        for path in completed_work:
+            meta = await db.uploads.find_one(
+                {"path": path}, {"_id": 0, "owner_id": 1, "content_type": 1}
+            )
+            if not meta or meta.get("owner_id") != user["id"]:
+                raise HTTPException(403, "Finished tattoo work upload does not belong to this account")
+            if not (meta.get("content_type") or "").startswith("image/"):
+                raise HTTPException(422, "Finished tattoo work must be an image")
+
         app_id = str(uuid.uuid4())
         doc = body.model_dump() if hasattr(body, "model_dump") else body.dict()
+        doc["government_id_path"] = government_id
+        doc["completed_work_paths"] = completed_work
         doc.update({"id": app_id, "user_id": user["id"], "email": user["email"], "status": "pending", "admin_note": None, "submitted_at": now_iso(), "reviewed_at": None})
         await db.artist_applications.insert_one(doc)
         return doc
@@ -63,6 +95,10 @@ def install(server):
             await db.artist_applications.update_one({"id": application_id}, {"$set": {"status": "rejected", "admin_note": body.admin_note, "reviewed_at": now_iso()}})
             return {"reviewed": True, "approved": False, "application_id": application_id}
 
+        # Never publish an artist if the required verification evidence is missing.
+        if not application.get("government_id_path") or not application.get("completed_work_paths"):
+            raise HTTPException(422, "Government ID and finished tattoo work are required before approval")
+
         artist_id = application.get("artist_id") or str(uuid.uuid4())
         artist = {
             "id": artist_id,
@@ -71,7 +107,7 @@ def install(server):
             "bio": application.get("bio", ""), "bio_tl": application.get("bio_tl", ""),
             "home_service_available": bool(application.get("home_service_available", False)), "home_service_fee": int(application.get("home_service_fee", 0)),
             "rate_per_hour": int(application.get("rate_per_hour", 0)), "avatar": application.get("avatar", ""), "hero": application.get("hero", ""),
-            "portfolio": application.get("portfolio", []), "rating": 5.0, "reviews_count": 0, "active": True, "blocked_dates": [],
+            "portfolio": application.get("portfolio", []) + application.get("completed_work_paths", []), "rating": 5.0, "reviews_count": 0, "active": True, "blocked_dates": [],
             "artist_user_id": application["user_id"], "phone": application.get("phone", ""), "service_area": application.get("service_area", ""),
         }
         existing_artist = await db.artists.find_one({"artist_user_id": application["user_id"]}, {"_id": 0})
