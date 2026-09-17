@@ -1,0 +1,1 @@
+Android app configuration is in build.gradle. The WebView URL is configured through BuildConfig.TINTA_WEB_URL.

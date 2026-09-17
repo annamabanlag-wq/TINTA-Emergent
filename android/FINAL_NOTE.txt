@@ -1,0 +1,1 @@
+The APK must be verified from a successful GitHub Actions run artifact before distribution.
