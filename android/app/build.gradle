@@ -13,7 +13,7 @@ android {
         targetSdk 35
         versionCode 1
         versionName '1.0'
-        buildConfigField 'String', 'TINTA_WEB_URL', '"https://t-1.onrender.com"'
+        buildConfigField 'String', 'TINTA_WEB_URL', '"https://tinta-emergent-1.onrender.com"'
     }
 
     compileOptions {
