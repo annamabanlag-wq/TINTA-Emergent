@@ -1,1 +1,0 @@
-Artist signup fix module added in artist_signup_fix.py. It must be imported by the backend startup patch loader before deployment.
