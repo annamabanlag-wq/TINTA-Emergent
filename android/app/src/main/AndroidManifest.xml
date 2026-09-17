@@ -4,6 +4,8 @@
     <application
         android:theme="@style/Theme.Tinta"
         android:label="TINTA"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
         android:allowBackup="true"
         android:supportsRtl="true">
         <activity
