@@ -8,6 +8,7 @@ artist record is published.
 Customer registration keeps the existing real email-verification flow.
 """
 
+from email_validator import EmailNotValidError, validate_email
 from fastapi import Request
 from fastapi.routing import APIRoute, request_response
 from fastapi.dependencies.utils import get_dependant
@@ -44,10 +45,16 @@ def install(module):
             if role != "artist":
                 return await original_register(body)
 
-            # Artist onboarding is admin-verified, not email-verified, while
-            # the platform has no verified outbound email domain. Reuse the
-            # same validation and password hashing as the hardened auth flow.
-            email = module._validate_email(body.email)
+            # Artist onboarding is admin-verified, not mailbox-verified, while
+            # the platform has no verified outbound email domain. We still
+            # require a syntactically valid, deliverable email domain so an
+            # obviously fake/nonexistent email address cannot register.
+            try:
+                validated = validate_email(body.email, check_deliverability=True)
+                email = validated.normalized
+            except EmailNotValidError:
+                raise module.HTTPException(422, "Please enter a real, reachable email address.")
+
             existing = await module.db.users.find_one({"email": email})
             if existing:
                 raise module.HTTPException(409, "Email already registered")
