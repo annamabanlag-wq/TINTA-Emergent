@@ -6,6 +6,7 @@ own independent session, so signing in on one device does not revoke another
 active device session.
 """
 
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -87,16 +88,31 @@ def install(module):
             payload = module.jwt.decode(token, module.JWT_SECRET, algorithms=[module.JWT_ALG])
             uid = payload["sub"]
             sid = payload.get("sid")
-            if not sid:
-                raise HTTPException(401, "Session expired. Please log in again.")
-        except HTTPException:
-            raise
         except Exception:
             raise HTTPException(401, "Invalid or expired session")
 
         user = await module.db.users.find_one({"id": uid}, {"_id": 0})
         if not user:
             raise HTTPException(401, "User not found")
+
+        # Backward-compatible migration for still-valid tokens created before
+        # server-side sessions were introduced. The JWT's own exp remains the
+        # hard outer boundary; this only creates the missing server session.
+        if not sid:
+            sid = "legacy-" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:48]
+            now = _now()
+            await module.db[COLLECTION].update_one(
+                {"session_id": sid, "user_id": uid},
+                {"$setOnInsert": {
+                    "session_id": sid,
+                    "user_id": uid,
+                    "created_at": _iso(now),
+                    "last_seen": _iso(now),
+                    "revoked": False,
+                    "migration_created": True,
+                }},
+                upsert=True,
+            )
 
         session = await module.db[COLLECTION].find_one(
             {"session_id": sid, "user_id": uid}, {"_id": 0}
@@ -224,5 +240,5 @@ def install(module):
 
     print(
         "TINTA auth session hardening installed: 30m idle, 12h absolute, "
-        "independent sessions per browser/device"
+        "legacy tokens migrate to independent server sessions"
     )
