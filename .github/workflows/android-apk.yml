@@ -43,3 +43,5 @@ jobs:
           name: TINTA-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+# TINTA APK build: keep Android build trigger active after resource fix.
