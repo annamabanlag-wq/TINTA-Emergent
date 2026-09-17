@@ -1,9 +1,11 @@
 """Require mailbox verification for newly registered TINTA accounts."""
 import os
 import secrets
-import requests
+import smtplib
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 
+import requests
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -21,8 +23,18 @@ class ResendVerificationIn(BaseModel):
     email: str
 
 
-def _smtp_configured() -> bool:
+def _gmail_configured() -> bool:
+    return bool(os.getenv("GMAIL_SMTP_USER") and os.getenv("GMAIL_SMTP_APP_PASSWORD"))
+
+
+def _resend_configured() -> bool:
     return bool(os.getenv("RESEND_API_KEY") and os.getenv("EMAIL_FROM"))
+
+
+def _email_configured() -> bool:
+    # Gmail SMTP is the primary sender. Resend remains as a fallback so an
+    # existing verified Resend setup can still work if Gmail is not configured.
+    return _gmail_configured() or _resend_configured()
 
 
 def _test_mode() -> bool:
@@ -34,11 +46,7 @@ def _test_email() -> str:
 
 
 def _enforce_test_email(email: str) -> str:
-    """In explicit test mode, only the configured Resend account email is allowed.
-
-    This keeps mailbox verification real while Resend has no verified sending
-    domain. Test mode is opt-in and never enabled by default.
-    """
+    """In explicit test mode, only the configured test email is allowed."""
     normalized = email.strip().lower()
     if not _test_mode():
         return normalized
@@ -50,7 +58,31 @@ def _enforce_test_email(email: str) -> str:
     return normalized
 
 
-def _send_code(email: str, code: str) -> None:
+def _send_code_gmail(email: str, code: str) -> None:
+    username = os.environ["GMAIL_SMTP_USER"].strip()
+    app_password = os.environ["GMAIL_SMTP_APP_PASSWORD"].replace(" ", "").strip()
+    sender = os.getenv("EMAIL_FROM", username).strip()
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = email
+    message["Subject"] = "Verify your TINTA account"
+    message.set_content(
+        f"Your TINTA verification code is: {code}\n\n"
+        f"This code expires in {CODE_TTL_MINUTES} minutes.\n"
+        "If you did not create a TINTA account, you can ignore this email."
+    )
+
+    # Gmail documents smtp.gmail.com with STARTTLS on port 587.
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(username, app_password)
+        smtp.send_message(message)
+
+
+def _send_code_resend(email: str, code: str) -> None:
     api_key = os.environ["RESEND_API_KEY"]
     sender = os.environ["EMAIL_FROM"]
     recipient = _test_email() if _test_mode() else email
@@ -75,10 +107,20 @@ def _send_code(email: str, code: str) -> None:
         timeout=20,
     )
     if not response.ok:
-        # Do not log the API key or verification code. The response body from
-        # Resend is useful for diagnosing sender/domain configuration failures.
         detail = response.text[:300]
         raise RuntimeError(f"Resend API {response.status_code}: {detail}")
+
+
+def _send_code(email: str, code: str) -> None:
+    # Use Gmail SMTP whenever configured. This avoids the current Resend 403
+    # caused by the absence of a verified sending domain.
+    if _gmail_configured():
+        _send_code_gmail(email, code)
+        return
+    if _resend_configured():
+        _send_code_resend(email, code)
+        return
+    raise RuntimeError("No email sender is configured")
 
 
 def _new_code():
@@ -116,7 +158,7 @@ def install(server_module):
     if not any(getattr(r, "path", None) == "/api/auth/resend-verification" for r in app.routes):
         @app.post("/api/auth/resend-verification")
         async def resend_verification(body: ResendVerificationIn):
-            if not _smtp_configured():
+            if not _email_configured():
                 raise HTTPException(503, "Email verification is not configured yet.")
             email = _enforce_test_email(body.email)
             user = await server_module.db.users.find_one({"email": email}, {"_id": 0})
@@ -143,7 +185,7 @@ def install(server_module):
                 break
 
             async def verified_register(body):
-                if not _smtp_configured():
+                if not _email_configured():
                     raise HTTPException(503, "Email verification is not configured yet. Please try again shortly.")
                 try:
                     validated = validate_email(body.email, check_deliverability=True)
