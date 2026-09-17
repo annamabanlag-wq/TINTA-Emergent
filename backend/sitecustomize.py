@@ -22,10 +22,6 @@ class _ServerLoader(importlib.abc.Loader):
             install_artist(module)
             from email_validation_patch import install as install_email_validation
             install_email_validation(module)
-            from email_verification_patch import install as install_email_verification
-            install_email_verification(module)
-            from email_verification_route_fix import install as install_email_verification_route_fix
-            install_email_verification_route_fix(module)
             from gcash_only_patch import install as install_gcash_only
             install_gcash_only(module)
             from gcash_security_patch import install as install_gcash_security
