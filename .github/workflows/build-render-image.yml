@@ -24,7 +24,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Render image
+      - name: Build and push full TINTA image
         uses: docker/build-push-action@v6
         with:
           context: .
