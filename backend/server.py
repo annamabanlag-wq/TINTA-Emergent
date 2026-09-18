@@ -1129,6 +1129,30 @@ async def admin_list_users(_=Depends(require_admin)):
     return docs
 
 
+@api_router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, admin=Depends(require_admin)):
+    """Permanently remove a user from admin, while anonymizing booking history."""
+    if user_id == admin["id"]:
+        raise HTTPException(400, "You cannot delete your own admin account from this page")
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1})
+    if not u:
+        raise HTTPException(404, "User not found")
+
+    # Preserve booking records for admin history, but remove the user's identity.
+    await db.bookings.update_many(
+        {"user_id": user_id},
+        {"$set": {"user_id": f"deleted:{user_id[:8]}"}},
+    )
+    # Remove personal user-owned data.
+    await db.favorites.delete_many({"user_id": user_id})
+    await db.messages.delete_many({"from_user_id": user_id})
+    await db.threads.delete_many({"user_id": user_id})
+    await db.reviews.delete_many({"user_id": user_id})
+
+    await db.users.delete_one({"id": user_id})
+    return {"deleted": True, "user_id": user_id}
+
+
 @api_router.post("/admin/users/{user_id}/toggle-admin")
 async def admin_toggle_admin(user_id: str, admin=Depends(require_admin)):
     u = await db.users.find_one({"id": user_id}, {"_id": 0})
