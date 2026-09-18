@@ -1,9 +1,9 @@
 .git
 .github
 .emergent
-frontend
 android
 node_modules
+**/node_modules
 **/__pycache__
 **/*.pyc
 **/.pytest_cache
