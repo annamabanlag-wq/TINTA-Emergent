@@ -2,6 +2,7 @@ name: TINTA Quick Android APK
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - '.github/workflows/tinta-webview-apk.yml'
