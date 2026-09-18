@@ -5,6 +5,7 @@ chain after the artist-role and auth-session patches. Sending is HTTPS-first so
 it works on Render free services where direct SMTP egress may be unavailable.
 """
 
+import json
 import os
 import secrets
 import smtplib
@@ -17,6 +18,7 @@ from fastapi import HTTPException, Request
 from fastapi.dependencies.utils import get_dependant
 from fastapi.routing import APIRoute, request_response
 from pydantic import BaseModel, Field
+from urllib.parse import urlparse
 
 CODE_TTL_MINUTES = 15
 RESEND_API_URL = "https://api.resend.com/emails"
@@ -51,11 +53,40 @@ def _new_code():
     return f"{secrets.randbelow(1000000):06d}", datetime.now(timezone.utc) + timedelta(minutes=CODE_TTL_MINUTES)
 
 
+def _relay_url() -> str:
+    return os.environ["TINTA_EMAIL_RELAY_URL"].strip()
+
+
+def _relay_host() -> str:
+    try:
+        parsed = urlparse(_relay_url())
+        return parsed.netloc or "(invalid-url)"
+    except Exception:
+        return "(invalid-url)"
+
+
+def _parse_json_response(response):
+    text = (response.text or "").lstrip("\ufeff").strip()
+    try:
+        return response.json()
+    except Exception:
+        try:
+            return json.loads(text)
+        except Exception:
+            raise RuntimeError(
+                f"Email relay returned non-JSON (http={response.status_code}, "
+                f"content_type={response.headers.get('content-type', '')}, "
+                f"final_url_host={urlparse(str(response.url)).netloc or '(none)'}, "
+                f"body_len={len(text)})"
+            )
+
+
 def _send_code_relay(email: str, code: str) -> None:
     response = requests.post(
-        os.environ["TINTA_EMAIL_RELAY_URL"].strip(),
+        _relay_url(),
         headers={
             "Content-Type": "application/json",
+            "Accept": "application/json,text/plain,*/*",
         },
         json={
             "token": os.environ["TINTA_EMAIL_RELAY_TOKEN"],
@@ -67,12 +98,56 @@ def _send_code_relay(email: str, code: str) -> None:
     )
     if not response.ok:
         raise RuntimeError(f"Email relay HTTP {response.status_code}: {response.text[:300]}")
-    try:
-        payload = response.json()
-    except Exception:
-        raise RuntimeError("Email relay returned a non-JSON response")
+    payload = _parse_json_response(response)
+    if not isinstance(payload, dict):
+        raise RuntimeError("Email relay returned an invalid JSON payload")
     if not payload.get("ok"):
         raise RuntimeError(f"Email relay rejected message: {payload.get('error', 'unknown error')}")
+
+
+def _relay_healthcheck() -> None:
+    if not _relay_configured():
+        return
+    try:
+        # Safe probe: uses the configured token but deliberately invalid code/email,
+        # so a correctly configured relay will reject before attempting to send mail.
+        response = requests.post(
+            _relay_url(),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json,text/plain,*/*",
+            },
+            json={
+                "token": os.environ["TINTA_EMAIL_RELAY_TOKEN"],
+                "to": "healthcheck@example.invalid",
+                "code": "invalid",
+                "ttl_minutes": 1,
+            },
+            timeout=10,
+        )
+        text = (response.text or "").lstrip("\ufeff").strip()
+        try:
+            payload = response.json()
+        except Exception:
+            payload = json.loads(text)
+        if isinstance(payload, dict):
+            error = str(payload.get("error") or "")
+            if response.ok and error == "Invalid email or code":
+                print(f"TINTA email relay health: OK host={_relay_host()}")
+            elif response.ok and error == "Unauthorized":
+                print(f"TINTA email relay health: TOKEN_MISMATCH host={_relay_host()}")
+            else:
+                print(
+                    f"TINTA email relay health: HTTP_{response.status_code} "
+                    f"error={error[:80]} host={_relay_host()}"
+                )
+        else:
+            print(f"TINTA email relay health: INVALID_JSON host={_relay_host()}")
+    except Exception as exc:
+        print(
+            f"TINTA email relay health: FAILED {type(exc).__name__}: {str(exc)[:120]} "
+            f"host={_relay_host()}"
+        )
 
 
 def _send_code_gmail(email: str, code: str) -> None:
@@ -313,4 +388,5 @@ def install(module):
         route.app = request_response(route.get_route_handler())
         break
 
+    _relay_healthcheck()
     print("TINTA final email ownership enforcement installed")
