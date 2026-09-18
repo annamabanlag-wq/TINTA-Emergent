@@ -135,7 +135,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback((email: string, password: string) => doAuth("/auth/login", { email, password }), [doAuth]);
   const signUp = useCallback((email: string, password: string, name: string, role: "customer" | "artist" = "customer") =>
-    doAuth("/auth/register", { email, password, name, role }, false), [doAuth]);
+    doAuth("/auth/register", { email, password, name, role }, role === "artist"), [doAuth]);
   const signOut = useCallback(async () => {
     const t = tokenRef.current;
     await revokeServerSession(t);
