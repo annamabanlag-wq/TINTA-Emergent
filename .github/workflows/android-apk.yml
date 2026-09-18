@@ -48,12 +48,8 @@ jobs:
         working-directory: frontend
         run: |
           mkdir -p assets/images
-          convert -size 1024x1024 xc:black \
-            -fill white -font DejaVu-Sans-Bold -pointsize 180 \
-            -gravity center -annotate +0+0 'TINTA' assets/images/icon.png
-          convert -size 1024x1024 xc:none \
-            -fill white -font DejaVu-Sans-Bold -pointsize 180 \
-            -gravity center -annotate +0+0 'TINTA' assets/images/adaptive-icon.png
+          convert -size 1024x1024 xc:black             -fill white -font DejaVu-Sans-Bold -pointsize 180             -gravity center -annotate +0+0 'TINTA' assets/images/icon.png
+          convert -size 1024x1024 xc:none             -fill white -font DejaVu-Sans-Bold -pointsize 180             -gravity center -annotate +0+0 'TINTA' assets/images/adaptive-icon.png
 
       - name: Generate native Android project
         working-directory: frontend
@@ -94,26 +90,10 @@ jobs:
         working-directory: frontend/android
         run: ./gradlew --no-daemon assembleRelease
 
-      - name: Smoke test TINTA APK on Android emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          script: |
-            adb install -r frontend/android/app/build/outputs/apk/release/app-release.apk
-            adb logcat -c
-            adb shell monkey -p com.tinta.app 1
-            sleep 12
-            adb logcat -d -v brief > /tmp/tinta-logcat.txt
-            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
-              cat /tmp/tinta-logcat.txt
-              exit 1
-            fi
-
-      - name: Verify standalone APK exists
-        run: test -s frontend/android/app/build/outputs/apk/release/app-release.apk
+      - name: Verify APK package
+        run: |
+          test -s frontend/android/app/build/outputs/apk/release/app-release.apk
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose frontend/android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload TINTA standalone APK
         uses: actions/upload-artifact@v4
@@ -122,4 +102,31 @@ jobs:
           path: frontend/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
-# Public APK build verification trigger: 2026-09-18
+  smoke-test:
+    needs: build-apk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download TINTA APK
+        uses: actions/download-artifact@v4
+        with:
+          name: TINTA-standalone-release-apk
+          path: apk
+
+      - name: Smoke test TINTA APK on fresh Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            set -o pipefail
+            adb install -r apk/app-release.apk
+            adb logcat -c
+            adb shell monkey -p com.tinta.app 1
+            sleep 15
+            adb logcat -d -v threadtime | tee /tmp/tinta-logcat.txt
+            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
+              exit 1
+            fi
