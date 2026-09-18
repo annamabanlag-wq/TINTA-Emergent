@@ -54,6 +54,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_artist_identity_response(module)
             from email_verification_enforcement_patch import install as install_email_enforcement
             install_email_enforcement(module)
+            from frontend_host_patch import install as install_frontend_host
+            install_frontend_host(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
