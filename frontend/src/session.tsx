@@ -5,7 +5,7 @@ import { api, AuthOut, User } from "./api";
 
 const KEY = "inked_token_v2";
 const LEGACY_KEY = "inked_token";
-const WEB_IDLE_MS = 30 * 60 * 1000;
+const WEB_IDLE_MS = 30 * 60 * 1000; // 30-minute browser idle timeout
 
 async function readToken(): Promise<string | null> {
   if (Platform.OS === "web") {
