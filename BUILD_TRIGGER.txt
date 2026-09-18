@@ -1,0 +1,1 @@
+TINTA production image build trigger.
