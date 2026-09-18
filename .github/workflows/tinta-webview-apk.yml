@@ -176,3 +176,37 @@ jobs:
           name: TINTA-webview-release-apk
           path: quickapp/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download TINTA APK
+        uses: actions/download-artifact@v4
+        with:
+          name: TINTA-webview-release-apk
+          path: apk
+
+      - name: Smoke test TINTA WebView APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb install -r apk/app-release.apk
+            adb logcat -c
+            adb shell monkey -p com.tinta.app 1
+            sleep 12
+            adb shell dumpsys activity activities > /tmp/tinta-activity.txt
+            adb logcat -d -v threadtime > /tmp/tinta-logcat.txt
+            cat /tmp/tinta-activity.txt
+            cat /tmp/tinta-logcat.txt
+            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
+              exit 1
+            fi
+            if ! grep -q "com.tinta.app" /tmp/tinta-activity.txt; then
+              exit 1
+            fi
