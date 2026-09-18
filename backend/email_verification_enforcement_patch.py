@@ -300,7 +300,7 @@ def install(module):
         if getattr(original_login, "_tinta_final_email_login", False):
             break
 
-        async def verified_login(body):
+        async def verified_login(body: module.LoginIn):
             result = await original_login(body)
             user = await db.users.find_one({"id": _result_user(result).get("id")}, {"_id": 0})
             if user and user.get("email_verified") is False:
