@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/workflows/android-smoke.yml'
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
