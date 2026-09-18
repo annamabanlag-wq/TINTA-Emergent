@@ -126,23 +126,34 @@ def _relay_healthcheck() -> None:
             timeout=10,
         )
         text = (response.text or "").lstrip("\ufeff").strip()
+        final_host = urlparse(str(response.url)).netloc or "(none)"
+        content_type = response.headers.get("content-type", "")
+        preview = " ".join(text[:160].split()).replace("\n", " ")
         try:
             payload = response.json()
         except Exception:
-            payload = json.loads(text)
+            try:
+                payload = json.loads(text)
+            except Exception:
+                print(
+                    f"TINTA email relay health: NON_JSON status={response.status_code} "
+                    f"content_type={content_type[:80]} request_host={_relay_host()} "
+                    f"final_host={final_host} body={preview[:160]!r}"
+                )
+                return
         if isinstance(payload, dict):
             error = str(payload.get("error") or "")
             if response.ok and error == "Invalid email or code":
-                print(f"TINTA email relay health: OK host={_relay_host()}")
+                print(f"TINTA email relay health: OK host={_relay_host()} final_host={final_host}")
             elif response.ok and error == "Unauthorized":
-                print(f"TINTA email relay health: TOKEN_MISMATCH host={_relay_host()}")
+                print(f"TINTA email relay health: TOKEN_MISMATCH host={_relay_host()} final_host={final_host}")
             else:
                 print(
                     f"TINTA email relay health: HTTP_{response.status_code} "
-                    f"error={error[:80]} host={_relay_host()}"
+                    f"error={error[:80]} host={_relay_host()} final_host={final_host}"
                 )
         else:
-            print(f"TINTA email relay health: INVALID_JSON host={_relay_host()}")
+            print(f"TINTA email relay health: INVALID_JSON host={_relay_host()} final_host={final_host}")
     except Exception as exc:
         print(
             f"TINTA email relay health: FAILED {type(exc).__name__}: {str(exc)[:120]} "
