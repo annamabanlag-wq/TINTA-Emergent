@@ -34,7 +34,25 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
     if (res.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new Event("tinta:auth-expired"));
     }
-    throw new Error((data as any)?.detail ?? `HTTP ${res.status}`);
+    const detail = (data as any)?.detail;
+    let message: string;
+    if (typeof detail === "string") {
+      message = detail;
+    } else if (Array.isArray(detail)) {
+      message = detail
+        .map((item: any) => {
+          if (typeof item === "string") return item;
+          if (item?.msg) return String(item.msg);
+          if (item?.message) return String(item.message);
+          return JSON.stringify(item);
+        })
+        .join("; ");
+    } else if (detail && typeof detail === "object") {
+      message = String(detail.message ?? detail.error ?? detail.msg ?? JSON.stringify(detail));
+    } else {
+      message = `HTTP ${res.status}`;
+    }
+    throw new Error(message);
   }
   return data as T;
 }
