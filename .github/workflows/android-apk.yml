@@ -102,3 +102,5 @@ jobs:
           name: TINTA-standalone-release-apk
           path: frontend/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+# Public APK build verification trigger: 2026-09-18
