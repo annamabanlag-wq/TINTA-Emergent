@@ -130,3 +130,5 @@ jobs:
             if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
               exit 1
             fi
+
+# APK verification trigger
