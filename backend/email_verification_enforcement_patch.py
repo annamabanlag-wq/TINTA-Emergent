@@ -274,6 +274,11 @@ def install(module):
     app = module.app
     db = module.db
 
+    require_verification = os.getenv("TINTA_REQUIRE_EMAIL_VERIFICATION", "false").strip().lower() == "true"
+    if not require_verification:
+        print("TINTA email ownership verification disabled for zero-budget launch; account email validation remains enforced by registration handlers")
+        return
+
     if not any(getattr(r, "path", None) == "/api/auth/verify-email" for r in app.routes):
         @app.post("/api/auth/verify-email")
         async def verify_email(body: VerifyEmailIn):
