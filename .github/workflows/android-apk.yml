@@ -10,7 +10,7 @@ on:
       - '.github/workflows/android-apk.yml'
 
 env:
-  ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a
+  ORG_GRADLE_PROJECT_reactNativeArchitectures: armeabi-v7a,arm64-v8a,x86,x86_64
 
 jobs:
   build-apk:
@@ -93,6 +93,24 @@ jobs:
       - name: Build standalone TINTA APK
         working-directory: frontend/android
         run: ./gradlew --no-daemon assembleRelease
+
+      - name: Smoke test TINTA APK on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install -r frontend/android/app/build/outputs/apk/release/app-release.apk
+            adb logcat -c
+            adb shell monkey -p com.tinta.app 1
+            sleep 12
+            adb logcat -d -v brief > /tmp/tinta-logcat.txt
+            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
+              cat /tmp/tinta-logcat.txt
+              exit 1
+            fi
 
       - name: Verify standalone APK exists
         run: test -s frontend/android/app/build/outputs/apk/release/app-release.apk
