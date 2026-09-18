@@ -106,6 +106,8 @@ export const adminApi = {
   listUsers: (token: string) => api<AdminUser[]>("/admin/users", {}, token),
   toggleUserAdmin: (userId: string, token: string) =>
     api<{ user_id: string; is_admin: boolean }>(`/admin/users/${userId}/toggle-admin`, { method: "POST" }, token),
+  deleteUser: (userId: string, token: string) =>
+    api<{ deleted: boolean; user_id: string }>(`/admin/users/${userId}`, { method: "DELETE" }, token),
   listArtists: (token: string) => api<AdminArtist[]>("/admin/artists", {}, token),
   createArtist: (data: Partial<AdminArtist>, token: string) =>
     api<AdminArtist>("/admin/artists", { method: "POST", body: JSON.stringify(data) }, token),
