@@ -10,7 +10,7 @@ on:
       - '.github/workflows/android-apk.yml'
 
 env:
-  ORG_GRADLE_PROJECT_reactNativeArchitectures: armeabi-v7a,arm64-v8a,x86,x86_64
+  ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a,x86_64
 
 jobs:
   build-apk:
