@@ -22,10 +22,11 @@ export default function SignUp() {
     setBusy(true);
     try {
       await signUp(email.trim(), password, name.trim(), isArtist ? "artist" : "customer");
-      router.replace({
-        pathname: "/(auth)/verify-email",
-        params: { email: email.trim(), role: isArtist ? "artist" : "customer" },
-      });
+      if (isArtist) {
+        router.replace("/artist/apply");
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch (e: any) {
       setErr(e?.message ?? "Sign up failed");
     } finally {
@@ -46,7 +47,7 @@ export default function SignUp() {
         <TextInput testID="signup-email-input" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@ink.com" placeholderTextColor={colors.muted} style={styles.input} />
         <Text style={styles.label}>PASSWORD (MIN 6)</Text>
         <TextInput testID="signup-password-input" value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={colors.muted} style={styles.input} />
-        <Text style={styles.hint}>{isArtist ? "Use a real, reachable email. Verify it first, then sign in to complete your artist profile with government ID and finished tattoo work for TINTA admin review." : "A verification code will be sent to your email before you can sign in."}</Text>
+        <Text style={styles.hint}>{isArtist ? "Use a real, reachable email. Next you will complete your artist profile with government ID and finished tattoo work for TINTA admin review." : "Use a real email address. Your account is ready to book after registration."}</Text>
         {!!err && <Text style={styles.err} testID="signup-error">{err.toUpperCase()}</Text>}
         <Pressable testID="signup-submit-button" onPress={submit} disabled={disabled} style={({ pressed }) => [styles.cta, disabled && styles.ctaDisabled, pressed && styles.ctaPressed]}>
           <Text style={styles.ctaText}>{busy ? "CREATING..." : isArtist ? "CREATE ARTIST ACCOUNT" : "CREATE ACCOUNT"}</Text>
