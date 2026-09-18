@@ -1,7 +1,7 @@
 FROM node:22-bookworm-slim AS webbuild
 
 WORKDIR /frontend
-RUN npm install -g yarn@1.22.22
+RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
 COPY frontend/package.json frontend/yarn.lock ./
 COPY frontend/scripts ./scripts
