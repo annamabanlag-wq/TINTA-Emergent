@@ -24,6 +24,9 @@ jobs:
         with:
           packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
 
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
       - name: Create lightweight TINTA Android app
         run: |
           mkdir -p quickapp/app/src/main/java/com/tinta/app
