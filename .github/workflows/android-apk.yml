@@ -121,7 +121,6 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
-            set -o pipefail
             adb install -r apk/app-release.apk
             adb logcat -c
             adb shell monkey -p com.tinta.app 1
