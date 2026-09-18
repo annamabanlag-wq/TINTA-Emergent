@@ -1,1 +1,2 @@
 Force full TINTA image rebuild for live deployment.
+Rebuild trigger: 2026-09-18T20:10+08:00
