@@ -31,6 +31,32 @@ export default function AdminUsersScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  const onDeleteUser = async (u: AdminUser) => {
+    if (u.id === me?.id) {
+      Alert.alert("Cannot delete", "You cannot delete your own admin account.");
+      return;
+    }
+    Alert.alert(
+      t("admin.user.delete.title"),
+      `${u.name || "User"} — ${u.email}`,
+      [
+        { text: t("admin.cancel"), style: "cancel" },
+        {
+          text: t("admin.user.delete.confirm"),
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await adminApi.deleteUser(u.id, token!);
+              await load();
+            } catch (e: any) {
+              Alert.alert("Error", e?.message ?? "Failed to delete user");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const onToggleAdmin = async (u: AdminUser) => {
     if (u.id === me?.id) {
       Alert.alert("Cannot modify", "You cannot change your own admin role.");
@@ -85,6 +111,17 @@ export default function AdminUsersScreen() {
                   {item.is_admin ? t("admin.role.admin") : t("admin.role.user")}
                 </Text>
               </Pressable>
+              {item.id !== me?.id && (
+                <Pressable
+                  testID={`delete-user-${item.id}`}
+                  onPress={() => onDeleteUser(item)}
+                  style={styles.deleteButton}
+                  accessibilityLabel="Delete user"
+                >
+                  <Icon name="trash-2" size={13} color={colors.danger} />
+                  <Text style={styles.deleteText}>{t("admin.user.delete.button")}</Text>
+                </Pressable>
+              )}
             </View>
           )}
           ListEmptyComponent={<Text style={styles.empty}>No users yet</Text>}
@@ -115,5 +152,15 @@ const styles = StyleSheet.create({
   roleBadgeActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   roleText: { color: colors.onSurface, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
   roleTextActive: { color: colors.onBrand },
+  deleteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderWidth: 2,
+    borderColor: colors.danger,
+  },
+  deleteText: { color: colors.danger, fontSize: 9, fontWeight: "900", letterSpacing: 0.7 },
   empty: { color: colors.muted, textAlign: "center", padding: spacing.xl, letterSpacing: 2, fontWeight: "800" },
 });
