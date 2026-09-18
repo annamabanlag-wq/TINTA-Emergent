@@ -1,0 +1,32 @@
+name: TINTA APK Device Smoke Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified TINTA APK
+        uses: actions/download-artifact@v4
+        with:
+          name: TINTA-standalone-release-apk
+          path: dist
+          run-id: 35346430133
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+
+      - name: Launch TINTA on ARM64 Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: arm64-v8a
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install -r dist/app-release.apk
+            adb logcat -c
+            adb shell monkey -p com.tinta.app 1
+            sleep 15
+            adb logcat -d -v threadtime | tee /tmp/tinta-logcat.txt
+            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then exit 1; fi
