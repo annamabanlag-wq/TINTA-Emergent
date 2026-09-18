@@ -208,17 +208,28 @@ def _send_code_resend(email: str, code: str) -> None:
 
 
 def _send_code(email: str, code: str) -> None:
-    # HTTPS relay first. Render free currently cannot reach Gmail SMTP directly.
+    # Try every configured sender so a stale/broken relay cannot block registration.
+    # The first successful sender wins; failures are retained for a useful final error.
+    senders = []
     if _relay_configured():
-        _send_code_relay(email, code)
-        return
+        senders.append(("relay", _send_code_relay))
     if _resend_configured():
-        _send_code_resend(email, code)
-        return
+        senders.append(("resend", _send_code_resend))
     if _gmail_configured():
-        _send_code_gmail(email, code)
-        return
-    raise RuntimeError("No email sender is configured")
+        senders.append(("gmail", _send_code_gmail))
+    if not senders:
+        raise RuntimeError("No email sender is configured")
+
+    failures = []
+    for name, sender in senders:
+        try:
+            sender(email, code)
+            print(f"TINTA verification email sent via {name}")
+            return
+        except Exception as exc:
+            failures.append(f"{name}: {type(exc).__name__}: {str(exc)[:180]}")
+            print(f"TINTA verification sender {name} failed: {type(exc).__name__}: {str(exc)[:180]}")
+    raise RuntimeError("All configured email senders failed: " + " | ".join(failures))
 
 
 async def _revoke_created_session(module, token: str):
