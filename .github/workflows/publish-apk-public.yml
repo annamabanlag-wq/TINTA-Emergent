@@ -1,0 +1,54 @@
+name: Publish TINTA APK Publicly
+
+on:
+  workflow_run:
+    workflows: ["TINTA Native Android APK"]
+    types: [completed]
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Download APK artifact from completed build
+        uses: actions/download-artifact@v4
+        with:
+          name: TINTA-standalone-release-apk
+          path: dist
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+
+      - name: Locate APK
+        id: apk
+        shell: bash
+        run: |
+          APK="$(find dist -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK to public download host
+        id: upload
+        shell: bash
+        run: |
+          APK="${{ steps.apk.outputs.path }}"
+          URL="$(curl -fsS -F "reqtype=fileupload" -F "fileToUpload=@${APK}" https://catbox.moe/user/api.php)"
+          test -n "$URL"
+          printf '%s\n' "$URL" > TINTA-APK-DOWNLOAD.txt
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          {
+            echo "## TINTA APK — Public Download"
+            echo
+            echo "$URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save public download link
+        uses: actions/upload-artifact@v4
+        with:
+          name: TINTA-public-download-link
+          path: TINTA-APK-DOWNLOAD.txt
+          if-no-files-found: error
