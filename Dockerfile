@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS webbuild
+FROM node:20-bookworm-slim AS webbuild
 
 WORKDIR /frontend
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
