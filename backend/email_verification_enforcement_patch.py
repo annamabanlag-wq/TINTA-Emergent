@@ -122,17 +122,27 @@ def _send_code_resend(email: str, code: str) -> None:
 
 
 def _send_code(email: str, code: str) -> None:
-    # HTTPS relay first. Render free currently cannot reach Gmail SMTP directly.
+    # Try every configured sender in order so one provider's restriction does
+    # not make TINTA unusable when a working fallback is configured.
+    configured = []
     if _relay_configured():
-        _send_code_relay(email, code)
-        return
+        configured.append(("relay", _send_code_relay))
     if _resend_configured():
-        _send_code_resend(email, code)
-        return
+        configured.append(("resend", _send_code_resend))
     if _gmail_configured():
-        _send_code_gmail(email, code)
-        return
-    raise RuntimeError("No email sender is configured")
+        configured.append(("gmail", _send_code_gmail))
+    if not configured:
+        raise RuntimeError("No email sender is configured")
+
+    errors = []
+    for name, sender in configured:
+        try:
+            sender(email, code)
+            return
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            print(f"TINTA verification sender {name} failed: {type(exc).__name__}: {exc}")
+    raise RuntimeError("All configured email senders failed: " + " | ".join(errors))
 
 
 async def _revoke_created_session(module, token: str):
@@ -239,10 +249,16 @@ def install(module):
             break
 
         async def verified_register(request: Request):
+            payload = await request.json()
+            role = str(payload.get("role", "customer")).strip().lower()
+            # Artist onboarding uses reachable-email validation plus government
+            # ID/finished-work/admin verification; it does not depend on a
+            # mailbox verification code.
+            if role == "artist":
+                return await original_register(request)
             if not _email_configured():
                 raise HTTPException(503, "Email verification is not configured yet. Please try again shortly.")
             try:
-                payload = await request.json()
                 validated = validate_email(str(payload.get("email", "")), check_deliverability=True)
             except EmailNotValidError:
                 raise HTTPException(422, "Please enter a real, reachable email address.")
@@ -303,7 +319,7 @@ def install(module):
         async def verified_login(body: module.LoginIn):
             result = await original_login(body)
             user = await db.users.find_one({"id": _result_user(result).get("id")}, {"_id": 0})
-            if user and user.get("email_verified") is False:
+            if user and user.get("email_verified") is False and user.get("role") != "artist":
                 raise HTTPException(403, "Please verify your email before signing in.")
             return result
 
