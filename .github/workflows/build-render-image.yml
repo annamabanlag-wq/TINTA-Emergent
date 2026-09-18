@@ -35,6 +35,10 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=tinta-render
+          cache-to: type=gha,mode=max,scope=tinta-render
           tags: |
             ghcr.io/${{ github.repository_owner }}/tinta-backend:render
             ghcr.io/${{ github.repository_owner }}/tinta-backend:${{ github.sha }}
