@@ -177,6 +177,9 @@ const DICT: Record<string, Record<Locale, string>> = {
   "admin.role.user": { en: "USER", tl: "USER" },
   "admin.role.promote": { en: "MAKE ADMIN", tl: "GAWING ADMIN" },
   "admin.role.demote": { en: "REVOKE ADMIN", tl: "TANGGALIN ADMIN" },
+  "admin.user.delete.title": { en: "DELETE USER?", tl: "BURAHIN ANG USER?" },
+  "admin.user.delete.confirm": { en: "DELETE USER", tl: "BURAHIN USER" },
+  "admin.user.delete.button": { en: "DELETE", tl: "BURAHIN" },
 };
 
 type Ctx = {
