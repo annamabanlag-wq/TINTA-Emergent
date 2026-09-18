@@ -2,6 +2,9 @@ name: TINTA APK Device Smoke Test
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/android-smoke.yml'
 
 jobs:
   smoke:
