@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           APK="${{ steps.apk.outputs.path }}"
-          URL="$(curl -fsS -F "reqtype=fileupload" -F "fileToUpload=@${APK}" https://catbox.moe/user/api.php)"
+          URL="$(curl -fsSL -A "TINTA-APK-Publisher/1.0" -F "reqtype=fileupload" -F "fileToUpload=@${APK}" https://catbox.moe/user/api.php)"
           test -n "$URL"
           printf '%s\n' "$URL" > TINTA-APK-DOWNLOAD.txt
           echo "url=$URL" >> "$GITHUB_OUTPUT"
