@@ -2,6 +2,7 @@ name: TINTA Quick Android APK
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     paths:
       - '.github/workflows/tinta-webview-apk.yml'
@@ -23,6 +24,9 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
 
       - name: Create lightweight TINTA Android app
         run: |
