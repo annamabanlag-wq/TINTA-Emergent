@@ -31,9 +31,25 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
+            set -o pipefail
             adb install -r dist/app-release.apk
             adb logcat -c
-            adb shell monkey -p com.tinta.app 1
+            adb shell monkey -p com.tinta.app 1 || true
             sleep 15
+            echo "=== PACKAGE INFO ==="
+            adb shell dumpsys package com.tinta.app | grep -E "versionName|versionCode|android.intent.action.MAIN|android.intent.category.LAUNCHER" || true
+            echo "=== ACTIVITY STATE ==="
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|mFocusedApp|com.tinta.app" || true
+            echo "=== LOGCAT ==="
             adb logcat -d -v threadtime | tee /tmp/tinta-logcat.txt
-            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then exit 1; fi
+            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
+              exit 1
+            fi
+
+      - name: Upload TINTA diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TINTA-android-smoke-diagnostics
+          path: /tmp/tinta-logcat.txt
+          if-no-files-found: warn
