@@ -200,16 +200,18 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
             adb install -r apk/app-release.apk
+            adb shell am force-stop com.tinta.app
             adb logcat -c
-            adb shell monkey -p com.tinta.app 1
-            sleep 12
+            adb shell am start -n com.tinta.app/.MainActivity
+            sleep 15
             adb shell dumpsys activity activities > /tmp/tinta-activity.txt
             adb logcat -d -v threadtime > /tmp/tinta-logcat.txt
-            cat /tmp/tinta-activity.txt
-            cat /tmp/tinta-logcat.txt
-            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app" /tmp/tinta-logcat.txt; then
+            grep -q "com.tinta.app" /tmp/tinta-activity.txt
+            if grep -Eiq "FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: com.tinta.app.*FATAL" /tmp/tinta-logcat.txt; then
+              cat /tmp/tinta-logcat.txt
               exit 1
             fi
-            if ! grep -q "com.tinta.app" /tmp/tinta-activity.txt; then
+            if ! grep -q "mResumedActivity.*com.tinta.app" /tmp/tinta-activity.txt; then
+              cat /tmp/tinta-activity.txt
               exit 1
             fi
