@@ -272,6 +272,7 @@ async def register(body: RegisterIn):
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
+    logger.info("TINTA SIGNUP role=customer user_id=%s email=%s name=%s", uid, email, body.name.strip())
     return AuthOut(access_token=make_token(uid), user=PublicUser(id=uid, email=email, name=body.name.strip(), is_admin=False))
 
 
