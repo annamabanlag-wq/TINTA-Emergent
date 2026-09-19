@@ -73,6 +73,7 @@ def install(module):
                 "created_at": module.now_iso(),
             }
             await module.db.users.insert_one(doc)
+            module.logger.info("TINTA SIGNUP role=artist user_id=%s email=%s name=%s", uid, email, body.name.strip())
 
             # Create an independent server session exactly like normal login.
             from auth_session_patch import _new_session
