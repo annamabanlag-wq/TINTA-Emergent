@@ -11,8 +11,17 @@ async function readToken(): Promise<string | null> {
   if (Platform.OS === "web") {
     try {
       if (typeof window === "undefined") return null;
-      const current = window.sessionStorage.getItem(KEY);
-      window.localStorage.removeItem(KEY);
+      // Keep the web session across refreshes and new tabs for the dedicated
+      // TINTA Admin domain. Migrate any older per-tab session when present.
+      const current = window.localStorage.getItem(KEY);
+      if (!current) {
+        const sessionToken = window.sessionStorage.getItem(KEY);
+        if (sessionToken) {
+          window.localStorage.setItem(KEY, sessionToken);
+          window.sessionStorage.removeItem(KEY);
+          return sessionToken;
+        }
+      }
       window.localStorage.removeItem(LEGACY_KEY);
       return current;
     } catch { return null; }
@@ -28,8 +37,10 @@ async function readToken(): Promise<string | null> {
 async function writeToken(v: string | null) {
   if (Platform.OS === "web") {
     if (typeof window === "undefined") return;
-    if (v) window.sessionStorage.setItem(KEY, v); else window.sessionStorage.removeItem(KEY);
-    window.localStorage.removeItem(KEY);
+    // Share the web session across refreshes and tabs so admin routes do not
+    // silently lose their Bearer token when opened in another tab.
+    if (v) window.localStorage.setItem(KEY, v); else window.localStorage.removeItem(KEY);
+    window.sessionStorage.removeItem(KEY);
     window.localStorage.removeItem(LEGACY_KEY);
     return;
   }
@@ -79,7 +90,31 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const onAuthExpired = () => { void clearSession(); };
-    if (typeof window !== "undefined") window.addEventListener("tinta:auth-expired", onAuthExpired);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== KEY) return;
+      if (!event.newValue) {
+        void clearSession();
+        return;
+      }
+      // Another TINTA tab signed in. Re-validate the shared token before
+      // adopting it.
+      void (async () => {
+        try {
+          const me = await api<User>("/auth/me", {}, event.newValue);
+          if (!active) return;
+          if (isArtistHost() && !isArtistUser(me)) return;
+          tokenRef.current = event.newValue;
+          setToken(event.newValue);
+          setUser(me);
+        } catch {
+          // The initiating tab will handle invalid credentials normally.
+        }
+      })();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("tinta:auth-expired", onAuthExpired);
+      window.addEventListener("storage", onStorage);
+    }
     (async () => {
       const t = await readToken();
       if (!active) return;
@@ -94,7 +129,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })();
     return () => {
       active = false;
-      if (typeof window !== "undefined") window.removeEventListener("tinta:auth-expired", onAuthExpired);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("tinta:auth-expired", onAuthExpired);
+        window.removeEventListener("storage", onStorage);
+      }
     };
   }, [clearSession]);
 
