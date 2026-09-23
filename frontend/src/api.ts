@@ -1,8 +1,7 @@
-// Browser builds use same-origin /api so Vercel/Render web hosts proxy requests
-// without exposing or redirecting the user to the Render backend URL.
-const BASE = typeof window !== "undefined"
-  ? ""
-  : (process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://tinta-backend.onrender.com");
+// Use the live TINTA backend directly so the Vercel artist portal does not
+// depend on a deployment-specific /api rewrite. The backend CORS policy already
+// allows the TINTA Vercel domains.
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://tinta-backend.onrender.com";
 export const API_URL = `${BASE}/api`;
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
