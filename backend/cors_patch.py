@@ -20,8 +20,11 @@ def install(module):
             "https://t-1.onrender.com",
             "https://tinta-artist.onrender.com",
             "https://tinta-admin.onrender.com",
+            "https://tinta-live.vercel.app",
+            "https://tinta-artist-live.vercel.app",
+            "https://tinta-admin-live.vercel.app",
         ]
-        kwargs["allow_origin_regex"] = r"^https://[A-Za-z0-9-]+\.onrender\.com$"
+        kwargs["allow_origin_regex"] = r"^https://(?:[A-Za-z0-9-]+\.)?tinta(?:-[A-Za-z0-9-]+)*\.(?:onrender\.com|vercel\.app)$"
         kwargs["allow_methods"] = ["*"]
         kwargs["allow_headers"] = ["*"]
         middleware.kwargs = kwargs
