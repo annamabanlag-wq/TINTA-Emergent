@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSession } from "../../src/session";
 import { api } from "../../src/api";
+import { adminApi, AdminUser } from "../../src/adminApi";
 import { colors, spacing } from "../../src/theme";
 
 type Registration = {
@@ -18,6 +19,57 @@ type Registration = {
   application_reviewed_at?: string | null;
 };
 
+type ArtistApplication = {
+  id: string;
+  user_id: string;
+  status: string;
+  submitted_at?: string | null;
+  reviewed_at?: string | null;
+  artist_id?: string | null;
+};
+
+function buildRows(users: AdminUser[], applications: ArtistApplication[]): Registration[] {
+  const latestApplication = new Map<string, ArtistApplication>();
+
+  for (const application of applications) {
+    const uid = String(application.user_id || "");
+    if (uid && !latestApplication.has(uid)) latestApplication.set(uid, application);
+  }
+
+  return users.map((user) => {
+    const raw = user as AdminUser & {
+      role?: string;
+      artist_portal?: boolean;
+      email_verified?: boolean;
+      artist_identity_verified?: boolean;
+    };
+
+    const role: "customer" | "artist" =
+      raw.role === "artist" || raw.artist_portal === true ? "artist" : "customer";
+
+    const application = role === "artist" ? latestApplication.get(user.id) : undefined;
+
+    let status = "registered";
+    if (role === "artist") {
+      status = application?.status || "account_created";
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role,
+      status,
+      created_at: user.created_at,
+      email_verified: Boolean(raw.email_verified),
+      artist_application_id: application?.id ?? null,
+      artist_id: application?.artist_id ?? null,
+      application_submitted_at: application?.submitted_at ?? null,
+      application_reviewed_at: application?.reviewed_at ?? null,
+    };
+  });
+}
+
 export default function AdminRegistrations() {
   const { token, user } = useSession();
   const [rows, setRows] = useState<Registration[]>([]);
@@ -28,7 +80,13 @@ export default function AdminRegistrations() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      setRows(await api<Registration[]>("/admin/registrations", {}, token));
+      // Use the live production backend endpoints already serving the admin
+      // console. This avoids depending on the separate source-backend service.
+      const [users, applications] = await Promise.all([
+        adminApi.listUsers(token),
+        api<ArtistApplication[]>("/admin/artist-applications", {}, token),
+      ]);
+      setRows(buildRows(users, applications));
     } catch (e) {
       console.warn("admin registrations", e);
     } finally {
@@ -52,7 +110,13 @@ export default function AdminRegistrations() {
     <ScrollView
       style={styles.root}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); load(); }}
+          tintColor={colors.brand}
+        />
+      }
     >
       <Text style={styles.title}>REGISTRATIONS</Text>
       <Text style={styles.subtitle}>EVERY CUSTOMER AND ARTIST SIGNUP</Text>
@@ -66,13 +130,21 @@ export default function AdminRegistrations() {
 
       <View style={styles.filters}>
         {(["all", "customer", "artist"] as const).map((value) => (
-          <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.filterActive]}>
-            <Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{value.toUpperCase()}</Text>
+          <Pressable
+            key={value}
+            onPress={() => setFilter(value)}
+            style={[styles.filter, filter === value && styles.filterActive]}
+          >
+            <Text style={[styles.filterText, filter === value && styles.filterTextActive]}>
+              {value.toUpperCase()}
+            </Text>
           </Pressable>
         ))}
       </View>
 
-      {loading ? <ActivityIndicator color={colors.brand} style={{ marginTop: spacing.xl }} /> : filtered.length === 0 ? (
+      {loading ? (
+        <ActivityIndicator color={colors.brand} style={{ marginTop: spacing.xl }} />
+      ) : filtered.length === 0 ? (
         <Text style={styles.empty}>NO REGISTRATIONS FOUND.</Text>
       ) : filtered.map((row) => (
         <View key={row.id} style={styles.card} testID={`registration-row-${row.id}`}>
@@ -83,10 +155,14 @@ export default function AdminRegistrations() {
             </View>
             <Text style={styles.role}>{row.role.toUpperCase()}</Text>
           </View>
+
           <View style={styles.metaLine}>
             <Text style={styles.status}>{row.status.replace(/_/g, " ").toUpperCase()}</Text>
-            <Text style={styles.date}>{row.created_at ? new Date(row.created_at).toLocaleString() : "—"}</Text>
+            <Text style={styles.date}>
+              {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+            </Text>
           </View>
+
           {row.role === "artist" ? (
             <Text style={styles.detail}>
               {row.artist_application_id
@@ -103,7 +179,12 @@ export default function AdminRegistrations() {
 }
 
 function Summary({ label, value }: { label: string; value: number }) {
-  return <View style={styles.summaryCard}><Text style={styles.summaryValue}>{value}</Text><Text style={styles.summaryLabel}>{label}</Text></View>;
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={styles.summaryLabel}>{label}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
