@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   errorText: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center", maxWidth: 320 },
   errorBanner: { marginTop: spacing.md, marginHorizontal: spacing.lg, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderWidth: 2, borderColor: colors.brand, backgroundColor: colors.surfaceSecondary, padding: spacing.sm },
   errorBannerText: { color: colors.onSurfaceSecondary, flex: 1, fontSize: 11, lineHeight: 15 },
-  errorRetry: { color: colors.brand, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 }
+  errorRetry: { color: colors.brand, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
   emptyBig: { color: colors.onSurface, fontSize: 44, fontWeight: "900", letterSpacing: 2, textAlign: "center", lineHeight: 48 },
   cta: { backgroundColor: colors.brand, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   ctaText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
