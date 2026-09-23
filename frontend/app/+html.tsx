@@ -2,9 +2,6 @@
 import { ScrollViewStyleReset } from "expo-router/html";
 import type { PropsWithChildren } from "react";
 
-const isArtistDeployment = process.env.EXPO_PUBLIC_APP_ROLE === "artist";
-const artistFallbackUrl = "https://tinta-emergent-1.onrender.com/artist/apply";
-
 export default function Root({ children }: PropsWithChildren) {
   return (
     <html lang="en" style={{ height: "100%" }}>
@@ -15,16 +12,6 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
-        {isArtistDeployment ? (
-          <>
-            <meta httpEquiv="refresh" content={`0;url=${artistFallbackUrl}`} />
-            <script
-              dangerouslySetInnerHTML={{
-                __html: `try{window.location.replace("${artistFallbackUrl}");}catch(e){}`,
-              }}
-            />
-          </>
-        ) : null}
         <ScrollViewStyleReset />
         <style
           dangerouslySetInnerHTML={{
