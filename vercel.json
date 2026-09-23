@@ -1,5 +1,11 @@
 {
   "installCommand": "cd frontend && yarn install --frozen-lockfile",
   "buildCommand": "cd frontend && npx expo export --platform web",
-  "outputDirectory": "frontend/dist"
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://tinta-backend.onrender.com/api/:path*"
+    }
+  ]
 }
