@@ -13,7 +13,11 @@ function isArtistDeployment() {
   return false;
 }
 
-export default function Index() {
+function ArtistEntry() {
+  return <Redirect href="/artist/apply" />;
+}
+
+function AppEntry() {
   const { user, loading } = useSession();
   if (loading) {
     return (
@@ -23,16 +27,16 @@ export default function Index() {
     );
   }
 
-  // The dedicated public TINTA-Artist domain must open directly to the
-  // artist application page. Requiring sign-in at the domain root makes a
-  // shared registration link appear inaccessible to new artists.
-  if (isArtistDeployment()) {
-    return <Redirect href="/artist/apply" />;
-  }
-
   if (APP_ROLE === "admin") {
     return <Redirect href={user ? "/admin/payments" : "/(auth)/sign-in?next=admin"} />;
   }
 
   return <Redirect href={user ? "/(tabs)" : "/(auth)/sign-in"} />;
+}
+
+export default function Index() {
+  // IMPORTANT: the public Artist domain must not initialize the normal
+  // customer/admin session before routing. That session check was the source
+  // of the indefinite loading screen on the dedicated artist URL.
+  return isArtistDeployment() ? <ArtistEntry /> : <AppEntry />;
 }
