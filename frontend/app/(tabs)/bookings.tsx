@@ -20,18 +20,19 @@ export default function BookingsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
+      setError("");
       const [data, fu] = await Promise.all([
         api<Booking[]>("/bookings", {}, token),
         api<Followup[]>("/bookings/followups", {}, token).catch(() => []),
       ]);
       setItems(data);
       setFollowups(fu);
-    } catch {
-      setItems([]);
-      setFollowups([]);
+    } catch (e: any) {
+      setError(e?.message || "Could not load your bookings. Please try again.");
     } finally { setLoading(false); setRefreshing(false); }
   }, [token]);
 
@@ -40,8 +41,10 @@ export default function BookingsTab() {
   const cancel = async (id: string) => {
     try {
       await api(`/bookings/${id}/cancel`, { method: "POST" }, token);
-      load();
-    } catch {}
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Could not cancel this booking. Please try again.");
+    }
   };
 
   const today = new Date().toISOString().slice(0, 10);
@@ -67,6 +70,15 @@ export default function BookingsTab() {
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.brand} size="large" /></View>
+      ) : filtered.length === 0 && error ? (
+        <View style={styles.center}>
+          <Icon name="wifi-off" size={34} color={colors.brand} />
+          <Text style={styles.errorTitle}>CONNECTION ISSUE</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable testID="bookings-retry-button" onPress={load} style={styles.cta}>
+            <Text style={styles.ctaText}>RETRY</Text>
+          </Pressable>
+        </View>
       ) : filtered.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.emptyBig}>{tab === "upcoming" ? t("bookings.empty.upcoming") : t("bookings.empty.past")}</Text>
@@ -77,7 +89,17 @@ export default function BookingsTab() {
           )}
         </View>
       ) : (
-        <FlatList
+        <View style={styles.listWrap}>
+          {error ? (
+            <View style={styles.errorBanner} testID="bookings-error-banner">
+              <Icon name="alert-circle" size={15} color={colors.brand} />
+              <Text style={styles.errorBannerText}>{error}</Text>
+              <Pressable testID="bookings-retry-inline" onPress={load} hitSlop={10}>
+                <Text style={styles.errorRetry}>RETRY</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <FlatList
           data={filtered}
           keyExtractor={(b) => b.id}
           contentContainerStyle={{ paddingBottom: spacing.xl }}
@@ -177,7 +199,8 @@ export default function BookingsTab() {
               </View>
             );
           }}
-        />
+          />
+        </View>
       )}
     </View>
   );
@@ -193,6 +216,12 @@ const styles = StyleSheet.create({
   segText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 2 },
   segTextActive: { color: colors.onBrand },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.lg },
+  listWrap: { flex: 1 },
+  errorTitle: { color: colors.onSurface, fontSize: 22, fontWeight: "900", letterSpacing: 2, textAlign: "center" },
+  errorText: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center", maxWidth: 320 },
+  errorBanner: { marginTop: spacing.md, marginHorizontal: spacing.lg, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderWidth: 2, borderColor: colors.brand, backgroundColor: colors.surfaceSecondary, padding: spacing.sm },
+  errorBannerText: { color: colors.onSurfaceSecondary, flex: 1, fontSize: 11, lineHeight: 15 },
+  errorRetry: { color: colors.brand, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 }
   emptyBig: { color: colors.onSurface, fontSize: 44, fontWeight: "900", letterSpacing: 2, textAlign: "center", lineHeight: 48 },
   cta: { backgroundColor: colors.brand, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   ctaText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
