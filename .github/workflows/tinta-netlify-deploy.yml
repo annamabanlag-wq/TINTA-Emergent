@@ -1,0 +1,33 @@
+name: TINTA Public Netlify Deploy
+
+on:
+  push:
+    branches: ["tinta-public-host"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NETLIFY_SITE_ID: 17644647-ab58-435b-a586-e2110463b93a
+      NETLIFY_PROXY_PATH: https://netlify-mcp.netlify.app/proxy/eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..abgus_SZpizt_NVc.9DxPew2zuIE3gvf0AhWIpKkoOc_p6P5kaX4dcwWz1DKCyw86BJRjhqqsAZBRXXpAzIWvlya1JobugLl38sffDaSPE5MnClY-99TgtfB0TzMtkNkcUIFXzcWcKUPj3M_49x2COgbcrHa6Rl8U7x9F-w5jS0hZEDEq1t83GyiatHRrFnNEknvrBUL7NC7SfYe0yd-mrWYeEwhj4jUQdnVxKfiEqoSCTGmVw7GacsRpCMpw_Fs8v_S-82c3GTlb2q60yKbJAO01nDipLJr3i9OhIOPl2J0oakMIM9SO-OkLvUAy5Zr9aB-NWLV9OH3DHLgKhygLEvyMciC4liJyj6WCqeETAY-9B2TetWAYzFsxo0rjq9Gl9BQe-OXFaB9yGCxK9ThQorEa.xmI7PVBS9oE9axmf-5DLCw
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Build TINTA web
+        working-directory: frontend
+        run: |
+          yarn install --frozen-lockfile
+          npx expo export --platform web
+
+      - name: Deploy to Netlify
+        run: |
+          npx -y @netlify/mcp@latest             --site-id "$NETLIFY_SITE_ID"             --proxy-path "$NETLIFY_PROXY_PATH"
