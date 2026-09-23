@@ -56,6 +56,8 @@ class _ServerLoader(importlib.abc.Loader):
             install_email_enforcement(module)
             from frontend_host_patch import install as install_frontend_host
             install_frontend_host(module)
+            from registration_admin_patch import install as install_registration_admin
+            install_registration_admin(module)
         except Exception as exc:
             print(f"TINTA startup patches not installed: {exc}")
             raise
