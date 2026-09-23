@@ -118,23 +118,33 @@ export default function Discover() {
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.hi}>{t("discover.hello")}, {user?.name?.split(" ")[0]?.toUpperCase() ?? "INK"}</Text>
-            <Text style={styles.headerTitle}>{t("tab.discover")}</Text>
+            <View style={styles.brandRow}>
+              <Text style={styles.brandText}>TINTA</Text>
+              <View style={styles.liveMark}><View style={styles.liveDot} /></View>
+            </View>
+            <Text style={styles.hi}>WELCOME BACK, {user?.name?.split(" ")[0]?.toUpperCase() ?? "INK"}</Text>
+            <Text style={styles.headerTitle}>FIND YOUR NEXT INK.</Text>
           </View>
-          <View style={styles.logo}><Text style={styles.logoText}>INK</Text></View>
+          <Pressable testID="home-profile-button" onPress={() => router.push("/(tabs)/profile")} style={styles.logo}>
+            <Icon name="user" size={17} color={colors.brand} />
+          </Pressable>
         </View>
 
+        <Text style={styles.homeSub}>DISCOVER ARTISTS, ORIGINAL WORK AND YOUR NEXT SESSION.</Text>
         <View style={styles.searchBox}>
           <Icon name="search" size={16} color={colors.muted} />
           <TextInput
             testID="discover-search-input"
             value={searchText}
             onChangeText={setSearchText}
-            placeholder={t("discover.search")}
+            placeholder="SEARCH ARTIST, STYLE OR CITY"
             placeholderTextColor={colors.muted}
             style={styles.searchInput}
             autoCapitalize="none"
           />
+          {searchText ? <Pressable testID="discover-clear-search" onPress={() => setSearchText("")} hitSlop={10}>
+            <Icon name="x-circle" size={16} color={colors.muted} />
+          </Pressable> : null}
         </View>
 
         <ScrollView
@@ -157,6 +167,25 @@ export default function Discover() {
             );
           })}
         </ScrollView>
+
+        <View style={styles.quickRow}>
+          <Pressable testID="quick-favorites" onPress={() => router.push("/favorites")} style={styles.quickCard}>
+            <View style={styles.quickIcon}><Icon name="heart" size={15} color={colors.brand} /></View>
+            <View style={styles.quickBody}>
+              <Text style={styles.quickLabel}>SAVED ARTISTS</Text>
+              <Text style={styles.quickHint}>YOUR PICKS</Text>
+            </View>
+            <Icon name="chevron-right" size={16} color={colors.muted} />
+          </Pressable>
+          <Pressable testID="quick-bookings" onPress={() => router.push("/(tabs)/bookings")} style={styles.quickCard}>
+            <View style={styles.quickIcon}><Icon name="calendar" size={15} color={colors.brand} /></View>
+            <View style={styles.quickBody}>
+              <Text style={styles.quickLabel}>MY BOOKINGS</Text>
+              <Text style={styles.quickHint}>UPCOMING SESSIONS</Text>
+            </View>
+            <Icon name="chevron-right" size={16} color={colors.muted} />
+          </Pressable>
+        </View>
       </View>
 
       {loading ? (
@@ -264,8 +293,13 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brandText: { color: colors.onSurface, fontSize: 24, fontWeight: "900", letterSpacing: 4 },
+  liveMark: { width: 18, height: 18, borderWidth: 1, borderColor: colors.brand, alignItems: "center", justifyContent: "center" },
+  liveDot: { width: 6, height: 6, backgroundColor: colors.brand },
   hi: { color: colors.muted, fontSize: 11, fontWeight: "800", letterSpacing: 2 },
-  headerTitle: { color: colors.onSurface, fontSize: 36, fontWeight: "900", letterSpacing: 2 },
+  headerTitle: { color: colors.onSurface, fontSize: 38, fontWeight: "900", letterSpacing: 1.5, lineHeight: 42 },
+  homeSub: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.4, lineHeight: 15 },
   logo: { borderWidth: 2, borderColor: colors.brand, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   logoText: { color: colors.brand, fontSize: 16, fontWeight: "900", letterSpacing: 3 },
   searchBox: {
@@ -283,12 +317,18 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
   chipTextActive: { color: colors.onBrand },
+  quickRow: { flexDirection: "row", gap: spacing.sm },
+  quickCard: { flex: 1, minHeight: 64, flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.sm, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  quickIcon: { width: 32, height: 32, borderWidth: 1, borderColor: colors.brand, alignItems: "center", justifyContent: "center" },
+  quickBody: { flex: 1 },
+  quickLabel: { color: colors.onSurface, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
+  quickHint: { color: colors.muted, fontSize: 8, fontWeight: "800", letterSpacing: 1, marginTop: 2 },
   cardWrapper: { position: "relative" },
   card: {
     marginTop: spacing.md, marginHorizontal: spacing.lg,
     borderWidth: 2, borderColor: colors.borderStrong,
   },
-  cardImageWrap: { aspectRatio: 3 / 4, backgroundColor: colors.surfaceSecondary },
+  cardImageWrap: { aspectRatio: 0.82, backgroundColor: colors.surfaceSecondary },
   heartBtn: {
     position: "absolute", top: spacing.md + spacing.md, left: spacing.lg + spacing.md,
     width: 40, height: 40, backgroundColor: "rgba(10,10,10,0.7)",
@@ -305,7 +345,7 @@ const styles = StyleSheet.create({
   },
   ratingText: { color: colors.onSurface, fontSize: 11, fontWeight: "900" },
   cardRate: { color: colors.brand, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
-  cardName: { color: colors.onSurface, fontSize: 28, fontWeight: "900", letterSpacing: 1 },
+  cardName: { color: colors.onSurface, fontSize: 23, fontWeight: "900", letterSpacing: 1 },
   cardMeta: { color: colors.onSurfaceTertiary, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 2 },
   styleRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginTop: spacing.sm },
   styleTag: { borderWidth: 1, borderColor: colors.onSurface, paddingHorizontal: 6, paddingVertical: 2 },
@@ -321,7 +361,7 @@ const styles = StyleSheet.create({
   resetText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
 
   // Featured
-  featWrap: { marginTop: spacing.md, marginHorizontal: spacing.lg, borderWidth: 2, borderColor: colors.brand },
+  featWrap: { marginTop: spacing.md, marginHorizontal: spacing.lg, borderWidth: 2, borderColor: colors.brand, shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
   featImage: { aspectRatio: 4 / 5, backgroundColor: colors.surfaceSecondary },
   featContent: { flex: 1, padding: spacing.md, justifyContent: "space-between" },
   featBadgeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
