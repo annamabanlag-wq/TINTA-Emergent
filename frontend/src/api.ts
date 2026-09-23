@@ -1,4 +1,8 @@
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://tinta-backend.onrender.com";
+// Browser builds use same-origin /api so Vercel/Render web hosts proxy requests
+// without exposing or redirecting the user to the Render backend URL.
+const BASE = typeof window !== "undefined"
+  ? ""
+  : (process.env.EXPO_PUBLIC_BACKEND_URL ?? "https://tinta-backend.onrender.com");
 export const API_URL = `${BASE}/api`;
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
