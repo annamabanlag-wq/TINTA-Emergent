@@ -23,8 +23,11 @@ export default function Index() {
     );
   }
 
+  // The dedicated public TINTA-Artist domain must open directly to the
+  // artist application page. Requiring sign-in at the domain root makes a
+  // shared registration link appear inaccessible to new artists.
   if (isArtistDeployment()) {
-    return <Redirect href="/(auth)/sign-in?next=artist" />;
+    return <Redirect href="/artist/apply" />;
   }
 
   if (APP_ROLE === "admin") {
