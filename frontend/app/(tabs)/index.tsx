@@ -74,13 +74,16 @@ export default function Discover() {
   const { t } = useI18n();
   const [style, setStyle] = useState("All");
   const [q, setQ] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [artists, setArtists] = useState<Artist[]>([]);
   const [featured, setFeatured] = useState<Featured | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
+      setError("");
       const params = new URLSearchParams();
       if (style && style !== "All") params.set("style", style);
       if (q) params.set("q", q);
@@ -90,8 +93,8 @@ export default function Discover() {
       ]);
       setArtists(data);
       setFeatured(f);
-    } catch {
-      setArtists([]);
+    } catch (e: any) {
+      setError(e?.message || "Could not load artists. Please try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -99,6 +102,11 @@ export default function Discover() {
   }, [style, q]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(searchText.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -120,8 +128,8 @@ export default function Discover() {
           <Icon name="search" size={16} color={colors.muted} />
           <TextInput
             testID="discover-search-input"
-            value={q}
-            onChangeText={setQ}
+            value={searchText}
+            onChangeText={setSearchText}
             placeholder={t("discover.search")}
             placeholderTextColor={colors.muted}
             style={styles.searchInput}
@@ -155,10 +163,23 @@ export default function Discover() {
         <View style={styles.center}><ActivityIndicator color={colors.brand} size="large" /></View>
       ) : artists.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyBig}>{t("discover.empty")}</Text>
-          <Pressable onPress={() => { setStyle("All"); setQ(""); }} style={styles.resetBtn}>
-            <Text style={styles.resetText}>{t("discover.reset")}</Text>
-          </Pressable>
+          {error ? (
+            <>
+              <Icon name="wifi-off" size={34} color={colors.brand} />
+              <Text style={styles.errorTitle}>CONNECTION ISSUE</Text>
+              <Text style={styles.errorText}>{error}</Text>
+              <Pressable testID="discover-retry-button" onPress={load} style={styles.resetBtn}>
+                <Text style={styles.resetText}>RETRY</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.emptyBig}>{t("discover.empty")}</Text>
+              <Pressable onPress={() => { setStyle("All"); setSearchText(""); }} style={styles.resetBtn}>
+                <Text style={styles.resetText}>{t("discover.reset")}</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       ) : (
         <FlatList
@@ -167,7 +188,18 @@ export default function Discover() {
           contentContainerStyle={{ paddingBottom: spacing.xl }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
           ListHeaderComponent={
-            showFeatured ? <FeaturedCard featured={featured!} onPress={() => router.push(`/artist/${featured!.artist.id}`)} /> : null
+            <View>
+              {error ? (
+                <View style={styles.errorBanner} testID="discover-error-banner">
+                  <Icon name="alert-circle" size={15} color={colors.brand} />
+                  <Text style={styles.errorBannerText}>{error}</Text>
+                  <Pressable testID="discover-retry-inline" onPress={load} hitSlop={10}>
+                    <Text style={styles.errorRetry}>RETRY</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {showFeatured ? <FeaturedCard featured={featured!} onPress={() => router.push(`/artist/${featured!.artist.id}`)} /> : null}
+            </View>
           }
           renderItem={({ item }) => {
             const fav = isFavorite(item.id);
@@ -279,6 +311,11 @@ const styles = StyleSheet.create({
   styleTag: { borderWidth: 1, borderColor: colors.onSurface, paddingHorizontal: 6, paddingVertical: 2 },
   styleTagText: { color: colors.onSurface, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.lg },
+  errorTitle: { color: colors.onSurface, fontSize: 22, fontWeight: "900", letterSpacing: 2, textAlign: "center" },
+  errorText: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center", maxWidth: 320 },
+  errorBanner: { marginTop: spacing.md, marginHorizontal: spacing.lg, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderWidth: 2, borderColor: colors.brand, backgroundColor: colors.surfaceSecondary, padding: spacing.sm },
+  errorBannerText: { color: colors.onSurfaceSecondary, flex: 1, fontSize: 11, lineHeight: 15 },
+  errorRetry: { color: colors.brand, fontSize: 10, fontWeight: "900", letterSpacing: 1.5 },
   emptyBig: { color: colors.onSurface, fontSize: 48, fontWeight: "900", letterSpacing: 2, textAlign: "center", lineHeight: 52 },
   resetBtn: { backgroundColor: colors.brand, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   resetText: { color: colors.onBrand, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
